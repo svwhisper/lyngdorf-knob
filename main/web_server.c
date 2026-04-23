@@ -90,7 +90,7 @@ static esp_err_t get_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, HTML_HEAD);
 
-    char buf[768];
+    char buf[1024];
     snprintf(buf, sizeof(buf),
         "<label>WiFi SSID<input name='ssid' value='%s'></label>"
         "<label>WiFi Password<input name='pass' type='password' value='%s'></label>"
