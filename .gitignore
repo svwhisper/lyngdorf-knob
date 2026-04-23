@@ -1,3 +1,4 @@
+.flickrExclusion
 build/
 sdkconfig
 sdkconfig.old
