@@ -1,0 +1,26 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "app_config.c"
+        "display.c"
+        "touch.c"
+        "encoder.c"
+        "lyngdorf.c"
+        "upnp.c"
+        "ui.c"
+        "wifi_manager.c"
+        "web_server.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_http_server
+        esp_http_client
+        esp_lcd
+        driver
+        esp_timer
+        esp_event
+        esp_netif
+        mdns
+        lwip
+)
