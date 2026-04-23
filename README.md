@@ -118,8 +118,6 @@ The config page is also available at `http://<device-ip>/` any time while connec
 
 ## Known issues / TODO
 
-- Touch tap/mute logic fires on every touch-down including the first tap of a double-tap; a tap-on-release filter would reduce false mute triggers.
-- `upnp.c` uses a GCC nested function (`parse_time`) — valid in GCC/ESP-IDF but can be extracted to a file-scope `static` if preferred.
 - No sleep/wake cycle — display stays on permanently. Could dim/sleep after an inactivity timeout.
 
 ## Reference projects

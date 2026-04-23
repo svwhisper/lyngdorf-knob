@@ -112,7 +112,7 @@ void app_main(void) {
 
     // 7. FreeRTOS tasks
     xTaskCreatePinnedToCore(ui_task,  "ui",  20480, NULL, 3, NULL, 1);
-    xTaskCreatePinnedToCore(net_task, "net",  8192, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(net_task, "net", 12288, NULL, 2, NULL, 0);
 
     ESP_LOGI(TAG, "tasks started");
 }

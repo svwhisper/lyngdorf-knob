@@ -72,7 +72,8 @@ static esp_err_t ssdp_discover(char *location, size_t loc_len) {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return ESP_FAIL;
 
-    struct timeval tv = { .tv_sec = SSDP_TIMEOUT_MS / 1000 };
+    struct timeval tv = { .tv_sec  = SSDP_TIMEOUT_MS / 1000,
+                          .tv_usec = (SSDP_TIMEOUT_MS % 1000) * 1000 };
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     int bcast = 1;
@@ -84,7 +85,10 @@ static esp_err_t ssdp_discover(char *location, size_t loc_len) {
     };
     inet_pton(AF_INET, SSDP_ADDR, &dest.sin_addr);
 
-    sendto(sock, msearch, strlen(msearch), 0, (struct sockaddr *)&dest, sizeof(dest));
+    if (sendto(sock, msearch, strlen(msearch), 0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
+        close(sock);
+        return ESP_FAIL;
+    }
 
     char buf[1024];
     struct sockaddr_in src;
@@ -205,6 +209,12 @@ static esp_err_t soap_call(const char *url, const char *action,
 // ---------------------------------------------------------------------------
 // Metadata extraction from GetPositionInfo response
 // ---------------------------------------------------------------------------
+static uint32_t parse_time(const char *s) {
+    unsigned h = 0, m = 0, sec = 0;
+    sscanf(s, "%u:%u:%u", &h, &m, &sec);
+    return h * 3600 + m * 60 + sec;
+}
+
 static void parse_metadata(const char *resp) {
     // TrackMetaData contains DIDL-Lite, may be URL-encoded
     static char meta[2048];
@@ -238,11 +248,6 @@ static void parse_metadata(const char *resp) {
     extract_tag(resp, "RelTime",       pos_s, sizeof(pos_s));
     extract_tag(resp, "TrackDuration", dur_s, sizeof(dur_s));
 
-    auto uint32_t parse_time(const char *s) {
-        unsigned h = 0, m = 0, sec = 0;
-        sscanf(s, "%u:%u:%u", &h, &m, &sec);
-        return h * 3600 + m * 60 + sec;
-    }
     uint32_t pos = parse_time(pos_s);
     uint32_t dur = parse_time(dur_s);
 

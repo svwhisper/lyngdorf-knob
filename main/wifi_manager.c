@@ -104,6 +104,8 @@ esp_err_t wifi_manager_init(void) {
     wifi_config_t sta_cfg = {0};
     strncpy((char *)sta_cfg.sta.ssid,     ssid, sizeof(sta_cfg.sta.ssid)     - 1);
     strncpy((char *)sta_cfg.sta.password, pass, sizeof(sta_cfg.sta.password) - 1);
+    sta_cfg.sta.ssid    [sizeof(sta_cfg.sta.ssid)     - 1] = '\0';
+    sta_cfg.sta.password[sizeof(sta_cfg.sta.password) - 1] = '\0';
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));

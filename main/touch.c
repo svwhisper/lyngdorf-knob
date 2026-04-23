@@ -17,13 +17,15 @@ static const char *TAG = "touch";
 #define CST816_REG_YH       0x05
 #define CST816_REG_YL       0x06
 
-// Double-tap detection
+// Double-tap detection thresholds
 #define DTAP_MAX_MS         400
 #define DTAP_MAX_MOVE_PX    40
 
-static int64_t s_last_tap_us = 0;
-static uint16_t s_last_tap_x = 0;
-static uint16_t s_last_tap_y = 0;
+// Edge-based tap state: single tap fires only after DTAP_MAX_MS with no follow-up press
+static bool    s_prev_down       = false;
+static bool    s_pending_single  = false;
+static int64_t s_release_time_us = 0;
+static uint16_t s_press_x = 0, s_press_y = 0;
 
 static esp_err_t cst816_read(uint8_t reg, uint8_t *buf, size_t len) {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -41,44 +43,56 @@ static esp_err_t cst816_read(uint8_t reg, uint8_t *buf, size_t len) {
 
 static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     uint8_t buf[4] = {0};
-    if (cst816_read(CST816_REG_XH, buf, 4) != ESP_OK) {
-        data->state = LV_INDEV_STATE_REL;
-        return;
-    }
-
+    bool i2c_ok = (cst816_read(CST816_REG_XH, buf, 4) == ESP_OK);
     uint8_t fingers = 0;
-    cst816_read(CST816_REG_FINGERS, &fingers, 1);
+    if (i2c_ok) cst816_read(CST816_REG_FINGERS, &fingers, 1);
 
-    if (fingers == 0) {
-        data->state = LV_INDEV_STATE_REL;
-        return;
-    }
-
+    bool currently_down = (i2c_ok && fingers > 0);
     uint16_t x = ((buf[0] & 0x0F) << 8) | buf[1];
     uint16_t y = ((buf[2] & 0x0F) << 8) | buf[3];
+    int64_t now = esp_timer_get_time();
 
+    // Rising edge: finger just touched down
+    if (!s_prev_down && currently_down) {
+        if (s_pending_single) {
+            // A previous tap is waiting — check if this is a double-tap
+            int64_t gap_ms = (now - s_release_time_us) / 1000;
+            uint16_t dx = (x > s_press_x) ? (x - s_press_x) : (s_press_x - x);
+            uint16_t dy = (y > s_press_y) ? (y - s_press_y) : (s_press_y - y);
+            if (gap_ms < DTAP_MAX_MS && dx < DTAP_MAX_MOVE_PX && dy < DTAP_MAX_MOVE_PX) {
+                lk_cmd_t cmd = { .type = CMD_PLAY_PAUSE, .param = 0 };
+                xQueueSend(g_cmd_queue, &cmd, 0);
+            } else {
+                // Gap too long — the previous tap was a standalone single tap
+                lk_cmd_t cmd = { .type = CMD_MUTE_TOGGLE, .param = 0 };
+                xQueueSend(g_cmd_queue, &cmd, 0);
+            }
+            s_pending_single = false;
+        }
+        s_press_x = x;
+        s_press_y = y;
+    }
+
+    // Falling edge: finger just lifted — arm the single-tap timer
+    if (s_prev_down && !currently_down) {
+        s_release_time_us = now;
+        s_pending_single  = true;
+    }
+
+    // Single-tap timeout: no second press arrived within the window
+    if (s_pending_single) {
+        int64_t gap_ms = (now - s_release_time_us) / 1000;
+        if (gap_ms >= DTAP_MAX_MS) {
+            lk_cmd_t cmd = { .type = CMD_MUTE_TOGGLE, .param = 0 };
+            xQueueSend(g_cmd_queue, &cmd, 0);
+            s_pending_single = false;
+        }
+    }
+
+    s_prev_down   = currently_down;
     data->point.x = x;
     data->point.y = y;
-    data->state   = LV_INDEV_STATE_PR;
-
-    // Double-tap detection → play/pause
-    int64_t now_us = esp_timer_get_time();
-    int64_t delta_ms = (now_us - s_last_tap_us) / 1000;
-    uint16_t dx = (x > s_last_tap_x) ? (x - s_last_tap_x) : (s_last_tap_x - x);
-    uint16_t dy = (y > s_last_tap_y) ? (y - s_last_tap_y) : (s_last_tap_y - y);
-
-    if (delta_ms > 0 && delta_ms < DTAP_MAX_MS && dx < DTAP_MAX_MOVE_PX && dy < DTAP_MAX_MOVE_PX) {
-        lk_cmd_t cmd = { .type = CMD_PLAY_PAUSE, .param = 0 };
-        xQueueSend(g_cmd_queue, &cmd, 0);
-        s_last_tap_us = 0;  // reset so triple-tap doesn't re-fire
-    } else {
-        // Single tap → mute toggle (dispatched on release; approximate here)
-        s_last_tap_us = now_us;
-        s_last_tap_x  = x;
-        s_last_tap_y  = y;
-        lk_cmd_t cmd = { .type = CMD_MUTE_TOGGLE, .param = 0 };
-        xQueueSend(g_cmd_queue, &cmd, 0);
-    }
+    data->state   = currently_down ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
 }
 
 esp_err_t touch_init(void) {
