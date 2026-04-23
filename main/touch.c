@@ -3,6 +3,7 @@
 
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "lvgl.h"
 #include <string.h>
 

@@ -8,6 +8,7 @@
 #include "driver/ledc.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "lvgl.h"
 
 static const char *TAG = "display";

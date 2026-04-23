@@ -84,6 +84,6 @@ esp_err_t encoder_init(void) {
     ESP_ERROR_CHECK(esp_timer_create(&args, &timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(timer, 3000));
 
-    ESP_LOGI(TAG, "encoder ready, vol_step=%d (%.1f dB)", s_vol_step, s_vol_step / 10.0f);
+    ESP_LOGI(TAG, "encoder ready, vol_step=%d (%.1f dB)", (int)s_vol_step, s_vol_step / 10.0f);
     return ESP_OK;
 }

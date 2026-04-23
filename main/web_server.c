@@ -90,14 +90,15 @@ static esp_err_t get_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, HTML_HEAD);
 
-    char buf[512];
+    char buf[768];
     snprintf(buf, sizeof(buf),
         "<label>WiFi SSID<input name='ssid' value='%s'></label>"
         "<label>WiFi Password<input name='pass' type='password' value='%s'></label>"
-        "<label>Amplifier IP Address<input name='amp_ip' value='%s' placeholder='192.168.1.x'></label>"
-        "<label>Volume Step (0.1 dB units, e.g. 5 = 0.5 dB/detent)<input name='vol_step' type='number' min='1' max='50' value='%lu'></label>"
-        "<label>UPnP Control URL <span style='color:#555'>(leave blank for auto-discovery)</span>"
-        "<input name='upnp_url' value='%s' placeholder='http://192.168.1.x:port/path'></label>",
+        "<label>Amp IP<input name='amp_ip' value='%s' placeholder='192.168.1.x'></label>"
+        "<label>Vol Step (0.1 dB units, e.g. 5=0.5dB/detent)"
+        "<input name='vol_step' type='number' min='1' max='50' value='%lu'></label>"
+        "<label>UPnP URL (blank=auto-discover)"
+        "<input name='upnp_url' value='%s' placeholder='http://x.x.x.x:port/path'></label>",
         ssid, pass, amp_ip, (unsigned long)vol_step, upnp_url);
     httpd_resp_sendstr_chunk(req, buf);
     httpd_resp_sendstr_chunk(req, HTML_FOOT);
@@ -123,8 +124,8 @@ static esp_err_t post_handler(httpd_req_t *req) {
 
     if (ssid[0])     config_set_str(NVS_WIFI_SSID, ssid);
     if (pass[0])     config_set_str(NVS_WIFI_PASS, pass);
-    if (amp_ip[0])   config_set_str(NVS_AMP_IP,    amp_ip);
-                     config_set_str(NVS_UPNP_URL,  upnp_url);
+    if (amp_ip[0])   config_set_str(NVS_AMP_IP,   amp_ip);
+    config_set_str(NVS_UPNP_URL, upnp_url);
     if (vol_s[0])    config_set_u32(NVS_VOL_STEP,  (uint32_t)atoi(vol_s));
 
     ESP_LOGI(TAG, "config saved — rebooting");
