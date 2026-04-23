@@ -56,6 +56,10 @@ void display_set_backlight(uint8_t pct) {
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
+void display_sleep(bool sleep) {
+    esp_lcd_panel_disp_on_off(s_panel, !sleep);
+}
+
 // ---------------------------------------------------------------------------
 // LVGL tick source
 // ---------------------------------------------------------------------------
