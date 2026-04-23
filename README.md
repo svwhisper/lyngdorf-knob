@@ -118,10 +118,9 @@ The config page is also available at `http://<device-ip>/` any time while connec
 
 ## Known issues / TODO
 
-- `esp_lcd_st77916` component API: tested against v0.0.2. If the component registry only serves v2.x, `display.c` may need minor API adjustments (the init call and panel dev config struct).
-- `upnp.c` uses a GCC nested function (`parse_time`) — valid in GCC/ESP-IDF but can be extracted to a file-scope `static` if needed.
-- Touch tap/mute logic fires on every touch-down; a proper gesture filter (tap-on-release) would reduce false triggers.
-- No sleep/wake cycle implemented yet — display stays on permanently.
+- Touch tap/mute logic fires on every touch-down including the first tap of a double-tap; a tap-on-release filter would reduce false mute triggers.
+- `upnp.c` uses a GCC nested function (`parse_time`) — valid in GCC/ESP-IDF but can be extracted to a file-scope `static` if preferred.
+- No sleep/wake cycle — display stays on permanently. Could dim/sleep after an inactivity timeout.
 
 ## Reference projects
 
