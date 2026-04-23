@@ -45,6 +45,8 @@
 #define NVS_AMP_IP          "amp_ip"
 #define NVS_VOL_STEP        "vol_step"
 #define NVS_UPNP_URL        "upnp_url"
+#define NVS_DIM_SECS        "dim_secs"
+#define NVS_SLEEP_SECS      "sleep_secs"
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -54,6 +56,10 @@
 #define WIFI_AP_SSID        "LyngdorfKnob"
 #define WIFI_AP_PASS        ""      // open AP
 #define WIFI_MAX_RETRIES    5
+#define DEFAULT_BL_PCT      80      // normal backlight %
+#define DEFAULT_DIM_PCT     20      // dimmed backlight %
+#define DEFAULT_DIM_SECS    30      // seconds idle before dimming (0 = disabled)
+#define DEFAULT_SLEEP_SECS  120     // seconds idle before sleep  (0 = disabled)
 
 // ---------------------------------------------------------------------------
 // Shared application state (written by net task, read by UI task)

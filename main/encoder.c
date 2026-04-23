@@ -1,5 +1,6 @@
 #include "encoder.h"
 #include "app_config.h"
+#include "power.h"
 
 #include "driver/gpio.h"
 #include "esp_timer.h"
@@ -36,6 +37,7 @@ static void encoder_poll_cb(void *arg) {
     int8_t step = table[(s_prev << 2) | cur];
     if (step != 0) {
         atomic_fetch_add(&s_delta, step);
+        power_signal_activity();
     }
     s_prev = cur;
 }

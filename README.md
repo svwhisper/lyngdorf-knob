@@ -10,12 +10,13 @@ ESP32-S3 firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** board, turni
 | Single tap (touch) | Mute / unmute |
 | Double tap (touch) | Play / pause (UPnP) — also mutes for non-UPnP sources |
 
-**Display** (360×360 round, always-on):
+**Display** (360×360 round):
 - 270° volume arc (teal, dims when muted)
 - Scrolling artist / album / track title (from UPnP metadata)
 - Volume dB overlay on rotation (fades after 2 s)
 - Play/pause and mute icons
 - Connection status
+- Dims after configurable idle timeout, sleeps (panel off) after a second timeout; any encoder or touch wakes instantly
 
 ## Hardware
 
@@ -45,12 +46,13 @@ ESP32-S3 firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** board, turni
 
 ```
 main.c               — app_main(), ui_task (core 1, pri 3), net_task (core 0, pri 2)
-display.c/h          — ST77916 QSPI init, LVGL 8 buffers, 2 ms tick timer
-touch.c/h            — CST816D I2C driver, LVGL indev, tap/double-tap detection
+display.c/h          — ST77916 QSPI init, LVGL 8 buffers, 2 ms tick timer, backlight PWM
+touch.c/h            — CST816D I2C driver, LVGL indev, edge-based tap/double-tap detection
 encoder.c/h          — 3 ms polling timer, gray-code quadrature decode → cmd queue
 lyngdorf.c/h         — Persistent TCP socket to amp:84, !VOLCH / !MUTE / poll state
 upnp.c/h             — SSDP discovery, AVTransport SOAP play/pause + GetPositionInfo
 ui.c/h               — LVGL widgets: volume arc, scrolling labels, icons, vol overlay
+power.c/h            — Dim/sleep state machine, activity signalling, WiFi modem-sleep
 wifi_manager.c/h     — STA mode, AP fallback after 5 retries, event-driven
 web_server.c/h       — HTTP config form at http://<device-ip>/
 app_config.c/h       — NVS get/set, shared lk_state_t, g_state_mutex, g_cmd_queue
@@ -111,14 +113,12 @@ On first boot (no WiFi credentials stored), the device starts a WiFi access poin
 - Amplifier IP address
 - Volume step (default: 5 = 0.5 dB per encoder detent)
 - UPnP Control URL (optional — leave blank for auto-discovery)
+- Dim display after N seconds idle (default: 30, 0 to disable)
+- Sleep display after N seconds idle (default: 120, 0 to disable)
 
 After saving, the device reboots and connects to your network.
 
 The config page is also available at `http://<device-ip>/` any time while connected to WiFi.
-
-## Known issues / TODO
-
-- No sleep/wake cycle — display stays on permanently. Could dim/sleep after an inactivity timeout.
 
 ## Reference projects
 

@@ -7,6 +7,7 @@
 #include "ui.h"
 #include "wifi_manager.h"
 #include "web_server.h"
+#include "power.h"
 
 #include "esp_log.h"
 #include "lvgl.h"
@@ -23,6 +24,7 @@ static void ui_task(void *arg) {
         if (xSemaphoreTake(g_lvgl_mutex, portMAX_DELAY) == pdTRUE) {
             encoder_process_events();
             ui_apply_pending_state();
+            power_tick();
             uint32_t next_ms = lv_timer_handler();
             xSemaphoreGive(g_lvgl_mutex);
             // Yield for at most 10 ms to stay responsive
@@ -107,10 +109,13 @@ void app_main(void) {
         xSemaphoreGive(g_lvgl_mutex);
     }
 
-    // 6. WiFi (starts STA or AP, launches web server on connect)
+    // 6. Power management (dim/sleep timers, loads NVS config)
+    ESP_ERROR_CHECK(power_init());
+
+    // 7. WiFi (starts STA or AP, launches web server on connect)
     ESP_ERROR_CHECK(wifi_manager_init());
 
-    // 7. FreeRTOS tasks
+    // 8. FreeRTOS tasks
     xTaskCreatePinnedToCore(ui_task,  "ui",  20480, NULL, 3, NULL, 1);
     xTaskCreatePinnedToCore(net_task, "net", 12288, NULL, 2, NULL, 0);
 

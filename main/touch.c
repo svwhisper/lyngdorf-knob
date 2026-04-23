@@ -1,5 +1,6 @@
 #include "touch.h"
 #include "app_config.h"
+#include "power.h"
 
 #include "driver/i2c.h"
 #include "esp_log.h"
@@ -54,6 +55,7 @@ static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 
     // Rising edge: finger just touched down
     if (!s_prev_down && currently_down) {
+        power_signal_activity();
         if (s_pending_single) {
             // A previous tap is waiting — check if this is a double-tap
             int64_t gap_ms = (now - s_release_time_us) / 1000;

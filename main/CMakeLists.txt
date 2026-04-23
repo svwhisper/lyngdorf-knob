@@ -10,6 +10,7 @@ idf_component_register(
         "ui.c"
         "wifi_manager.c"
         "web_server.c"
+        "power.c"
     INCLUDE_DIRS "."
     REQUIRES
         nvs_flash
