@@ -1,6 +1,7 @@
 #include "encoder.h"
 #include "app_config.h"
 #include "power.h"
+#include "haptic.h"
 
 #include "driver/gpio.h"
 #include "esp_timer.h"
@@ -48,6 +49,8 @@ static void encoder_poll_cb(void *arg) {
 void encoder_process_events(void) {
     int delta = atomic_exchange(&s_delta, 0);
     if (delta == 0) return;
+
+    haptic_play();  // one tick per coalesced batch — safe here (UI task, I2C allowed)
 
     lk_cmd_t cmd = {
         .type  = CMD_VOL_CHANGE,

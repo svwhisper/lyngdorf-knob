@@ -47,6 +47,7 @@
 #define NVS_UPNP_URL        "upnp_url"
 #define NVS_DIM_SECS        "dim_secs"
 #define NVS_SLEEP_SECS      "sleep_secs"
+#define NVS_HAPTIC_EN       "haptic_en"
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -60,6 +61,7 @@
 #define DEFAULT_DIM_PCT     20      // dimmed backlight %
 #define DEFAULT_DIM_SECS    30      // seconds idle before dimming (0 = disabled)
 #define DEFAULT_SLEEP_SECS  120     // seconds idle before sleep  (0 = disabled)
+#define DEFAULT_HAPTIC_EN   1       // haptic feedback on by default
 
 // ---------------------------------------------------------------------------
 // Shared application state (written by net task, read by UI task)
