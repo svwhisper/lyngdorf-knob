@@ -13,10 +13,11 @@ ESP32-S3 firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** board, turni
 **Display** (360×360 round):
 - 270° volume arc (teal, dims when muted)
 - Scrolling artist / album / track title (from UPnP metadata)
-- Volume dB overlay on rotation (fades after 2 s)
+- Volume dB overlay on rotation (fades over 5 s)
 - Play/pause and mute icons
 - Connection status
 - Dims after configurable idle timeout, sleeps (panel off) after a second timeout; any encoder or touch wakes instantly
+- Haptic feedback (DRV2605 LRA) on every encoder detent (enable/disable via config)
 
 ## Hardware
 
@@ -26,6 +27,7 @@ ESP32-S3 firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** board, turni
 | Display | 360×360 round LCD, ST77916, QSPI |
 | Touch | CST816D capacitive, I2C |
 | Encoder | EC11-style quadrature, GPIO 7/8 |
+| Haptic | DRV2605 LRA driver, I2C (shared bus with touch) |
 | WiFi | 2.4 GHz 802.11 b/g/n |
 
 ### Pin assignments
@@ -53,6 +55,7 @@ lyngdorf.c/h         — Persistent TCP socket to amp:84, !VOLCH / !MUTE / poll 
 upnp.c/h             — SSDP discovery, AVTransport SOAP play/pause + GetPositionInfo
 ui.c/h               — LVGL widgets: volume arc, scrolling labels, icons, vol overlay
 power.c/h            — Dim/sleep state machine, activity signalling, WiFi modem-sleep
+haptic.c/h           — DRV2605 I2C driver, LRA init, effect pre-load, play on demand
 wifi_manager.c/h     — STA mode, AP fallback after 5 retries, event-driven
 web_server.c/h       — HTTP config form at http://<device-ip>/
 app_config.c/h       — NVS get/set, shared lk_state_t, g_state_mutex, g_cmd_queue
@@ -115,6 +118,7 @@ On first boot (no WiFi credentials stored), the device starts a WiFi access poin
 - UPnP Control URL (optional — leave blank for auto-discovery)
 - Dim display after N seconds idle (default: 30, 0 to disable)
 - Sleep display after N seconds idle (default: 120, 0 to disable)
+- Haptic feedback enabled/disabled (default: enabled)
 
 After saving, the device reboots and connects to your network.
 

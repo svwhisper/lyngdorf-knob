@@ -8,6 +8,7 @@
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "power.h"
+#include "haptic.h"
 
 #include "esp_log.h"
 #include "lvgl.h"
@@ -103,19 +104,22 @@ void app_main(void) {
     // 4. Rotary encoder
     ESP_ERROR_CHECK(encoder_init());
 
-    // 5. Build LVGL UI (must be after lv_init which happens in display_init)
+    // 5. Haptic driver (shares I2C bus with touch — must init after touch_init)
+    ESP_ERROR_CHECK(haptic_init());
+
+    // 6. Build LVGL UI (must be after lv_init which happens in display_init)
     if (xSemaphoreTake(g_lvgl_mutex, portMAX_DELAY) == pdTRUE) {
         ESP_ERROR_CHECK(ui_init());
         xSemaphoreGive(g_lvgl_mutex);
     }
 
-    // 6. Power management (dim/sleep timers, loads NVS config)
+    // 7. Power management (dim/sleep timers, loads NVS config)
     ESP_ERROR_CHECK(power_init());
 
-    // 7. WiFi (starts STA or AP, launches web server on connect)
+    // 8. WiFi (starts STA or AP, launches web server on connect)
     ESP_ERROR_CHECK(wifi_manager_init());
 
-    // 8. FreeRTOS tasks
+    // 9. FreeRTOS tasks
     xTaskCreatePinnedToCore(ui_task,  "ui",  20480, NULL, 3, NULL, 1);
     xTaskCreatePinnedToCore(net_task, "net", 12288, NULL, 2, NULL, 0);
 

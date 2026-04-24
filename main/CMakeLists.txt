@@ -11,6 +11,7 @@ idf_component_register(
         "wifi_manager.c"
         "web_server.c"
         "power.c"
+        "haptic.c"
     INCLUDE_DIRS "."
     REQUIRES
         nvs_flash
