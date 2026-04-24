@@ -61,16 +61,33 @@ static int vol_to_pct(int32_t vol_db10) {
 }
 
 // ---------------------------------------------------------------------------
-// Hide-volume timer callback
+// Volume overlay fade-out animation (5 s opacity 255 → 0)
 // ---------------------------------------------------------------------------
-static void vol_hide_cb(lv_timer_t *t) {
+static void set_vol_opa(void *obj, int32_t opa) {
+    lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)opa, 0);
+}
+
+static void vol_fade_done_cb(lv_anim_t *a) {
     lv_obj_add_flag(s_vol_lbl, LV_OBJ_FLAG_HIDDEN);
-    // Show track info again
+    lv_obj_set_style_opa(s_vol_lbl, LV_OPA_COVER, 0);  // reset for next use
+}
+
+// Fires 500 ms after the last rotation; starts the 5 s fade
+static void vol_hide_cb(lv_timer_t *t) {
+    lv_timer_del(t);
+    s_vol_hide_timer = NULL;
+    // Reveal track labels beneath the fading overlay
     lv_obj_clear_flag(s_title_lbl,  LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_artist_lbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_album_lbl,  LV_OBJ_FLAG_HIDDEN);
-    lv_timer_del(t);
-    s_vol_hide_timer = NULL;
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, s_vol_lbl);
+    lv_anim_set_exec_cb(&a, set_vol_opa);
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_time(&a, 5000);
+    lv_anim_set_ready_cb(&a, vol_fade_done_cb);
+    lv_anim_start(&a);
 }
 
 // ---------------------------------------------------------------------------
@@ -80,16 +97,20 @@ static void ui_show_vol_overlay(int32_t vol_db10) {
     char buf[24];
     snprintf(buf, sizeof(buf), "%.1f dB", vol_db10 / 10.0f);
     lv_label_set_text(s_vol_lbl, buf);
+
+    // Cancel any in-progress fade and restore full opacity
+    lv_anim_del(s_vol_lbl, set_vol_opa);
+    lv_obj_set_style_opa(s_vol_lbl, LV_OPA_COVER, 0);
     lv_obj_clear_flag(s_vol_lbl, LV_OBJ_FLAG_HIDDEN);
 
-    // Temporarily hide track info
+    // Hide track info while vol overlay is fully visible
     lv_obj_add_flag(s_title_lbl,  LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_artist_lbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_album_lbl,  LV_OBJ_FLAG_HIDDEN);
 
-    // Restart/create 2-second hide timer
+    // (Re)start 500 ms debounce — fires when rotation has stopped
     if (s_vol_hide_timer) lv_timer_reset(s_vol_hide_timer);
-    else s_vol_hide_timer = lv_timer_create(vol_hide_cb, 2000, NULL);
+    else s_vol_hide_timer = lv_timer_create(vol_hide_cb, 500, NULL);
 }
 
 // ---------------------------------------------------------------------------
