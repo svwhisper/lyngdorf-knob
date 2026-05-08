@@ -44,16 +44,16 @@
 #define NVS_WIFI_PASS       "wifi_pass"
 #define NVS_AMP_IP          "amp_ip"
 #define NVS_VOL_STEP        "vol_step"
-#define NVS_UPNP_URL        "upnp_url"
 #define NVS_DIM_SECS        "dim_secs"
 #define NVS_SLEEP_SECS      "sleep_secs"
 #define NVS_HAPTIC_EN       "haptic_en"
+#define NVS_META_POLL_S     "meta_poll_s"   // metadata poll interval, seconds
 
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 #define AMP_TCP_PORT        84
-#define DEFAULT_VOL_STEP    5       // 0.5 dB per encoder detent
+#define DEFAULT_VOL_STEP    10      // 1.0 dB per encoder detent
 #define WIFI_AP_SSID        "LyngdorfKnob"
 #define WIFI_AP_PASS        ""      // open AP
 #define WIFI_MAX_RETRIES    5
@@ -62,6 +62,8 @@
 #define DEFAULT_DIM_SECS    30      // seconds idle before dimming (0 = disabled)
 #define DEFAULT_SLEEP_SECS  120     // seconds idle before sleep  (0 = disabled)
 #define DEFAULT_HAPTIC_EN   0       // haptic off by default (knob has mechanical feedback)
+#define DEFAULT_META_POLL_S 3       // poll amp's HTTP metadata API every N s
+#define METADATA_HTTP_PORT  8080    // amp's JSON HTTP API port
 
 // ---------------------------------------------------------------------------
 // Shared application state (written by net task, read by UI task)

@@ -18,14 +18,12 @@ static const char *TAG = "touch";
 #define CST816_REG_YH       0x05
 #define CST816_REG_YL       0x06
 
-// Double-tap detection thresholds
-#define DTAP_MAX_MS         400
-#define DTAP_MAX_MOVE_PX    40
+// Maximum movement during a press for it to count as a tap (vs. a swipe)
+#define TAP_MAX_MOVE_PX     40
 
-// Edge-based tap state: single tap fires only after DTAP_MAX_MS with no follow-up press
-static bool    s_prev_down       = false;
-static bool    s_pending_single  = false;
-static int64_t s_release_time_us = 0;
+// Simple two-state tap: a clean press-and-release toggles mute on lift.
+// No double-tap detection; no play/pause from touch.
+static bool     s_prev_down = false;
 static uint16_t s_press_x = 0, s_press_y = 0;
 
 static esp_err_t cst816_read(uint8_t reg, uint8_t *buf, size_t len) {
@@ -51,43 +49,21 @@ static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     bool currently_down = (i2c_ok && fingers > 0);
     uint16_t x = ((buf[0] & 0x0F) << 8) | buf[1];
     uint16_t y = ((buf[2] & 0x0F) << 8) | buf[3];
-    int64_t now = esp_timer_get_time();
 
-    // Rising edge: finger just touched down
+    // Rising edge: finger touched down — record start position
     if (!s_prev_down && currently_down) {
         power_signal_activity();
-        if (s_pending_single) {
-            // A previous tap is waiting — check if this is a double-tap
-            int64_t gap_ms = (now - s_release_time_us) / 1000;
-            uint16_t dx = (x > s_press_x) ? (x - s_press_x) : (s_press_x - x);
-            uint16_t dy = (y > s_press_y) ? (y - s_press_y) : (s_press_y - y);
-            if (gap_ms < DTAP_MAX_MS && dx < DTAP_MAX_MOVE_PX && dy < DTAP_MAX_MOVE_PX) {
-                lk_cmd_t cmd = { .type = CMD_PLAY_PAUSE, .param = 0 };
-                xQueueSend(g_cmd_queue, &cmd, 0);
-            } else {
-                // Gap too long — the previous tap was a standalone single tap
-                lk_cmd_t cmd = { .type = CMD_MUTE_TOGGLE, .param = 0 };
-                xQueueSend(g_cmd_queue, &cmd, 0);
-            }
-            s_pending_single = false;
-        }
         s_press_x = x;
         s_press_y = y;
     }
 
-    // Falling edge: finger just lifted — arm the single-tap timer
+    // Falling edge: finger lifted — fire mute if it was a stationary tap
     if (s_prev_down && !currently_down) {
-        s_release_time_us = now;
-        s_pending_single  = true;
-    }
-
-    // Single-tap timeout: no second press arrived within the window
-    if (s_pending_single) {
-        int64_t gap_ms = (now - s_release_time_us) / 1000;
-        if (gap_ms >= DTAP_MAX_MS) {
+        uint16_t dx = (x > s_press_x) ? (x - s_press_x) : (s_press_x - x);
+        uint16_t dy = (y > s_press_y) ? (y - s_press_y) : (s_press_y - y);
+        if (dx < TAP_MAX_MOVE_PX && dy < TAP_MAX_MOVE_PX) {
             lk_cmd_t cmd = { .type = CMD_MUTE_TOGGLE, .param = 0 };
             xQueueSend(g_cmd_queue, &cmd, 0);
-            s_pending_single = false;
         }
     }
 

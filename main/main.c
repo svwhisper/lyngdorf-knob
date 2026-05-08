@@ -3,7 +3,7 @@
 #include "touch.h"
 #include "encoder.h"
 #include "lyngdorf.h"
-#include "upnp.h"
+#include "metadata.h"
 #include "ui.h"
 #include "wifi_manager.h"
 #include "web_server.h"
@@ -35,7 +35,9 @@ static void ui_task(void *arg) {
 }
 
 // ---------------------------------------------------------------------------
-// Network task — Lyngdorf TCP + UPnP polling, command dispatch (priority 2)
+// Network task — Lyngdorf RIO TCP polling and command dispatch (priority 2).
+// Now-playing metadata is polled separately by metadata_task (priority 1) so
+// the HTTP fetch doesn't add latency to encoder commands.
 // ---------------------------------------------------------------------------
 static void net_task(void *arg) {
     // Wait for WiFi before doing anything network-related
@@ -45,27 +47,31 @@ static void net_task(void *arg) {
 
     if (wifi_manager_is_connected()) {
         lyngdorf_init();
-        upnp_init();
     }
 
     TickType_t last_lyngdorf = 0;
-    TickType_t last_upnp     = 0;
 
     while (1) {
-        // Drain command queue first (low latency for knob/touch input)
+        // Wait for a command, OR for the next periodic-poll due time, whichever
+        // comes first. Blocking on the queue means commands are processed with
+        // ~zero added latency once they arrive.
         lk_cmd_t cmd;
-        while (xQueueReceive(g_cmd_queue, &cmd, 0) == pdTRUE) {
-            switch (cmd.type) {
-                case CMD_VOL_CHANGE:
-                    lyngdorf_vol_delta(cmd.param);
-                    break;
-                case CMD_MUTE_TOGGLE:
-                    lyngdorf_mute_toggle();
-                    break;
-                case CMD_PLAY_PAUSE:
-                    upnp_play_pause();
-                    break;
-            }
+        int32_t  vol_delta_total  = 0;
+        bool     mute_toggle_req  = false;
+
+        if (xQueueReceive(g_cmd_queue, &cmd, pdMS_TO_TICKS(20)) == pdTRUE) {
+            // First command arrived — drain anything else that's already queued
+            // (coalesces a fast multi-detent rotation into one !VOLCH).
+            do {
+                switch (cmd.type) {
+                    case CMD_VOL_CHANGE:  vol_delta_total += cmd.param; break;
+                    case CMD_MUTE_TOGGLE: mute_toggle_req = true;        break;
+                    case CMD_PLAY_PAUSE:  /* not currently triggered */  break;
+                }
+            } while (xQueueReceive(g_cmd_queue, &cmd, 0) == pdTRUE);
+
+            if (vol_delta_total != 0) lyngdorf_vol_delta(vol_delta_total);
+            if (mute_toggle_req)      lyngdorf_mute_toggle();
         }
 
         TickType_t now = xTaskGetTickCount();
@@ -75,14 +81,6 @@ static void net_task(void *arg) {
             if (wifi_manager_is_connected()) lyngdorf_poll_state();
             last_lyngdorf = now;
         }
-
-        // Poll UPnP metadata every 3 s
-        if ((now - last_upnp) >= pdMS_TO_TICKS(3000)) {
-            if (wifi_manager_is_connected()) upnp_poll_metadata();
-            last_upnp = now;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -122,6 +120,9 @@ void app_main(void) {
     // 9. FreeRTOS tasks
     xTaskCreatePinnedToCore(ui_task,  "ui",  20480, NULL, 3, NULL, 1);
     xTaskCreatePinnedToCore(net_task, "net", 12288, NULL, 2, NULL, 0);
+
+    // 10. Background metadata polling (own task at lower priority)
+    ESP_ERROR_CHECK(metadata_init());
 
     ESP_LOGI(TAG, "tasks started");
 }

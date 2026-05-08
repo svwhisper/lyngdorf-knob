@@ -13,32 +13,39 @@ static const char *TAG = "encoder";
 // Accumulated encoder delta (atomic so timer ISR and UI task can share safely)
 static atomic_int s_delta = 0;
 
-// Previous pin state for quadrature decode
-static uint8_t s_prev = 0;
+// Previous pin state. bit1 = A, bit0 = B. Rest = 0b11.
+static uint8_t s_prev = 0b11;
 
 // Vol step loaded from NVS
 static int32_t s_vol_step = DEFAULT_VOL_STEP;
 
 // ---------------------------------------------------------------------------
-// 3 ms polling timer callback — software quadrature decode
+// 3 ms polling timer callback.
+//
+// The Waveshare knob is NOT a quadrature encoder. Each detent click pulses
+// ONE of the two GPIO lines low briefly and back to high:
+//
+//      rest:                       0b11  (both lines high via internal pull-ups)
+//      click "direction A":        0b11 -> 0b01 -> 0b11   (line A pulses low)
+//      click "direction B":        0b11 -> 0b10 -> 0b11   (line B pulses low)
+//
+// Direction is determined entirely by which line went low. We commit one
+// logical step on the engage transition (rest -> single-line-low) and ignore
+// the release (low-line -> rest). Other transitions are noise and ignored.
 // ---------------------------------------------------------------------------
 static void encoder_poll_cb(void *arg) {
-    uint8_t a = gpio_get_level(ENC_A_GPIO);
-    uint8_t b = gpio_get_level(ENC_B_GPIO);
-    uint8_t cur = (a << 1) | b;
+    uint8_t cur = (gpio_get_level(ENC_A_GPIO) << 1) | gpio_get_level(ENC_B_GPIO);
 
-    // Gray-code state machine: transitions that indicate direction
-    static const int8_t table[16] = {
-         0, -1,  1,  0,
-         1,  0,  0, -1,
-        -1,  0,  0,  1,
-         0,  1, -1,  0,
-    };
-
-    int8_t step = table[(s_prev << 2) | cur];
-    if (step != 0) {
-        atomic_fetch_add(&s_delta, step);
-        power_signal_activity();
+    if (s_prev == 0b11) {
+        // Direction signs chosen so CW rotation increases volume:
+        // on this hardware A-low (0b01) = CW = increase, B-low (0b10) = CCW = decrease.
+        if (cur == 0b01) {            // A pulsed low → CW → increase
+            atomic_fetch_add(&s_delta, 1);
+            power_signal_activity();
+        } else if (cur == 0b10) {     // B pulsed low → CCW → decrease
+            atomic_fetch_add(&s_delta, -1);
+            power_signal_activity();
+        }
     }
     s_prev = cur;
 }
@@ -56,7 +63,9 @@ void encoder_process_events(void) {
         .type  = CMD_VOL_CHANGE,
         .param = delta * s_vol_step,   // e.g. 1 detent × 5 = 0.5 dB
     };
-    xQueueSend(g_cmd_queue, &cmd, 0);
+    BaseType_t r = xQueueSend(g_cmd_queue, &cmd, 0);
+    ESP_LOGI(TAG, "encoder delta=%d → param=%d queue_send=%d",
+             delta, (int)cmd.param, (int)r);
 }
 
 // ---------------------------------------------------------------------------

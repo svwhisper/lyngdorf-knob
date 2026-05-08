@@ -215,32 +215,35 @@ esp_err_t ui_init(void) {
     lv_obj_set_style_pad_all(s_vol_arc, 0, LV_PART_KNOB);
     lv_obj_clear_flag(s_vol_arc, LV_OBJ_FLAG_CLICKABLE);
 
-    // ---- Artist (small, above centre) ------------------------------------
+    // ---- Artist (top line) — same size/colour as title -------------------
     s_artist_lbl = lv_label_create(scr);
     lv_label_set_text(s_artist_lbl, "");
-    lv_obj_set_style_text_color(s_artist_lbl, COL_GRAY, 0);
-    lv_obj_set_style_text_font(s_artist_lbl,  &lv_font_montserrat_12, 0);
-    lv_obj_set_width(s_artist_lbl, 240);
+    lv_obj_set_style_text_color(s_artist_lbl, COL_WHITE, 0);
+    lv_obj_set_style_text_font(s_artist_lbl,  &lv_font_montserrat_16, 0);
+    lv_obj_set_width(s_artist_lbl, 260);
     lv_label_set_long_mode(s_artist_lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(s_artist_lbl, LV_ALIGN_CENTER, 0, -50);
+    lv_obj_set_style_text_align(s_artist_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_artist_lbl, LV_ALIGN_CENTER, 0, -45);
 
-    // ---- Album (small, just above centre) --------------------------------
-    s_album_lbl = lv_label_create(scr);
-    lv_label_set_text(s_album_lbl, "");
-    lv_obj_set_style_text_color(s_album_lbl, COL_DIM, 0);
-    lv_obj_set_style_text_font(s_album_lbl,  &lv_font_montserrat_12, 0);
-    lv_obj_set_width(s_album_lbl, 240);
-    lv_label_set_long_mode(s_album_lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(s_album_lbl, LV_ALIGN_CENTER, 0, -28);
-
-    // ---- Title (medium, centre) ------------------------------------------
+    // ---- Title (middle line) ---------------------------------------------
     s_title_lbl = lv_label_create(scr);
     lv_label_set_text(s_title_lbl, "Not Playing");
     lv_obj_set_style_text_color(s_title_lbl, COL_WHITE, 0);
     lv_obj_set_style_text_font(s_title_lbl,  &lv_font_montserrat_16, 0);
     lv_obj_set_width(s_title_lbl, 260);
     lv_label_set_long_mode(s_title_lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_align(s_title_lbl, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_align(s_title_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_title_lbl, LV_ALIGN_CENTER, 0, -10);
+
+    // ---- Album (bottom line) — same size/colour as title -----------------
+    s_album_lbl = lv_label_create(scr);
+    lv_label_set_text(s_album_lbl, "");
+    lv_obj_set_style_text_color(s_album_lbl, COL_WHITE, 0);
+    lv_obj_set_style_text_font(s_album_lbl,  &lv_font_montserrat_16, 0);
+    lv_obj_set_width(s_album_lbl, 260);
+    lv_label_set_long_mode(s_album_lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_text_align(s_album_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_album_lbl, LV_ALIGN_CENTER, 0, 25);
 
     // ---- Volume overlay (shown on rotation, hidden otherwise) ------------
     s_vol_lbl = lv_label_create(scr);
@@ -250,27 +253,26 @@ esp_err_t ui_init(void) {
     lv_obj_align(s_vol_lbl, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(s_vol_lbl, LV_OBJ_FLAG_HIDDEN);
 
+    // ---- Mute / Play icons (below album line, 2x larger) ----------------
+    s_mute_icon = lv_label_create(scr);
+    lv_label_set_text(s_mute_icon, LV_SYMBOL_MUTE);
+    lv_obj_set_style_text_color(s_mute_icon, COL_MUTE, 0);
+    lv_obj_set_style_text_font(s_mute_icon,  &lv_font_montserrat_32, 0);
+    lv_obj_align(s_mute_icon, LV_ALIGN_CENTER, -45, 90);
+    lv_obj_add_flag(s_mute_icon, LV_OBJ_FLAG_HIDDEN);
+
+    s_play_icon = lv_label_create(scr);
+    lv_label_set_text(s_play_icon, LV_SYMBOL_PLAY);
+    lv_obj_set_style_text_color(s_play_icon, COL_PLAY, 0);
+    lv_obj_set_style_text_font(s_play_icon,  &lv_font_montserrat_32, 0);
+    lv_obj_align(s_play_icon, LV_ALIGN_CENTER, 45, 90);
+
     // ---- Status (connection info, bottom centre) -------------------------
     s_status_lbl = lv_label_create(scr);
     lv_label_set_text(s_status_lbl, LV_SYMBOL_WIFI " Connecting...");
     lv_obj_set_style_text_color(s_status_lbl, COL_DIM, 0);
     lv_obj_set_style_text_font(s_status_lbl,  &lv_font_montserrat_12, 0);
-    lv_obj_align(s_status_lbl, LV_ALIGN_CENTER, 0, 60);
-
-    // ---- Mute icon -------------------------------------------------------
-    s_mute_icon = lv_label_create(scr);
-    lv_label_set_text(s_mute_icon, LV_SYMBOL_MUTE);
-    lv_obj_set_style_text_color(s_mute_icon, COL_MUTE, 0);
-    lv_obj_set_style_text_font(s_mute_icon,  &lv_font_montserrat_16, 0);
-    lv_obj_align(s_mute_icon, LV_ALIGN_CENTER, -30, 36);
-    lv_obj_add_flag(s_mute_icon, LV_OBJ_FLAG_HIDDEN);
-
-    // ---- Play/pause icon -------------------------------------------------
-    s_play_icon = lv_label_create(scr);
-    lv_label_set_text(s_play_icon, LV_SYMBOL_PLAY);
-    lv_obj_set_style_text_color(s_play_icon, COL_PLAY, 0);
-    lv_obj_set_style_text_font(s_play_icon,  &lv_font_montserrat_16, 0);
-    lv_obj_align(s_play_icon, LV_ALIGN_CENTER, 30, 36);
+    lv_obj_align(s_status_lbl, LV_ALIGN_CENTER, 0, 130);
 
     ESP_LOGI(TAG, "UI ready");
     return ESP_OK;

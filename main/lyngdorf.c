@@ -4,6 +4,7 @@
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "esp_log.h"
+#include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -43,9 +44,13 @@ static esp_err_t lyngdorf_connect(void) {
     s_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s_sock < 0) return ESP_FAIL;
 
-    struct timeval tv = { .tv_sec = 3 };
-    setsockopt(s_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(s_sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    // Short recv timeout — net_task is blocked while we wait, so a long
+    // timeout makes the encoder queue lag every poll cycle. 250 ms is
+    // plenty for the amp's reply (typical RTT < 50 ms).
+    struct timeval rcv_tv = { .tv_sec = 0, .tv_usec = 250 * 1000 };
+    struct timeval snd_tv = { .tv_sec = 1, .tv_usec = 0 };
+    setsockopt(s_sock, SOL_SOCKET, SO_RCVTIMEO, &rcv_tv, sizeof(rcv_tv));
+    setsockopt(s_sock, SOL_SOCKET, SO_SNDTIMEO, &snd_tv, sizeof(snd_tv));
 
     if (connect(s_sock, (struct sockaddr *)&dest, sizeof(dest)) != 0) {
         ESP_LOGW(TAG, "connect to %s:84 failed", s_amp_ip);
@@ -65,15 +70,20 @@ static esp_err_t lyngdorf_connect(void) {
 
 // Send a Lyngdorf command (terminated with CR as per protocol spec)
 static esp_err_t lyngdorf_send_cmd(const char *cmd) {
-    if (lyngdorf_connect() != ESP_OK) return ESP_FAIL;
+    if (lyngdorf_connect() != ESP_OK) {
+        ESP_LOGW(TAG, "send '%s' aborted: not connected", cmd);
+        return ESP_FAIL;
+    }
 
     char buf[64];
     int len = snprintf(buf, sizeof(buf), "%s\r", cmd);
-    if (send(s_sock, buf, len, 0) < 0) {
-        ESP_LOGW(TAG, "send failed, closing");
+    int n = send(s_sock, buf, len, 0);
+    if (n < 0) {
+        ESP_LOGW(TAG, "send '%s' failed (errno %d), closing", cmd, errno);
         lyngdorf_close();
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "tx: %s (%d bytes)", cmd, n);
     return ESP_OK;
 }
 
@@ -108,14 +118,11 @@ static bool parse_vol_response(const char *line, int32_t *out) {
 }
 
 static bool parse_mute_response(const char *line, bool *out) {
-    if (strstr(line, "!MUTE") || strstr(line, "#MUTE")) {
-        *out = true;
-        return true;
-    }
-    if (strstr(line, "!UNMUTE") || strstr(line, "#UNMUTE")) {
-        *out = false;
-        return true;
-    }
+    // Actual Lyngdorf RIO format on this amp: `!MUTE(ON)` or `!MUTE(OFF)`
+    // (also `#MUTE(...)` for echoes). Check OFF first since "ON" is a
+    // substring of nothing relevant here but be defensive.
+    if (strstr(line, "MUTE(OFF)")) { *out = false; return true; }
+    if (strstr(line, "MUTE(ON)"))  { *out = true;  return true; }
     return false;
 }
 
@@ -155,7 +162,7 @@ void lyngdorf_mute_toggle(void) {
         return;
     }
 
-    const char *cmd = currently_muted ? "!UNMUTE" : "!MUTE";
+    const char *cmd = currently_muted ? "!MUTE(OFF)" : "!MUTE(ON)";
     if (lyngdorf_send_cmd(cmd) == ESP_OK) {
         if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
             g_state.muted = !currently_muted;
@@ -165,27 +172,32 @@ void lyngdorf_mute_toggle(void) {
     }
 }
 
-// Query current vol and mute state from amp; updates g_state
+// Query current vol & mute state from amp; updates g_state.
+// Track metadata is fetched separately by metadata_task via the amp's HTTP
+// JSON API (RIO doesn't expose track info on this firmware).
 void lyngdorf_poll_state(void) {
     if (s_amp_ip[0] == '\0') return;
 
-    if (lyngdorf_send_cmd("!VOL?") != ESP_OK) return;
+    if (lyngdorf_send_cmd("!VOL?")  != ESP_OK) return;
+    if (lyngdorf_send_cmd("!MUTE?") != ESP_OK) return;
 
     char line[64];
-    // Read up to 4 response lines (amp echoes + response)
-    for (int i = 0; i < 4; i++) {
+    bool got_vol = false, got_mute = false;
+    for (int i = 0; i < 8 && !(got_vol && got_mute); i++) {
         int n = lyngdorf_recv_line(line, sizeof(line));
         if (n <= 0) break;
-        ESP_LOGD(TAG, "rx: %s", line);
+        ESP_LOGI(TAG, "rx: %s", line);
 
         int32_t vol;
         bool muted;
         if (parse_vol_response(line, &vol)) {
+            got_vol = true;
             if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (g_state.vol_db10 != vol) { g_state.vol_db10 = vol; g_state.dirty = true; }
                 xSemaphoreGive(g_state_mutex);
             }
         } else if (parse_mute_response(line, &muted)) {
+            got_mute = true;
             if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (g_state.muted != muted) { g_state.muted = muted; g_state.dirty = true; }
                 xSemaphoreGive(g_state_mutex);

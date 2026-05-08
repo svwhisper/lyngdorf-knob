@@ -21,7 +21,7 @@ esp_err_t app_config_init(void) {
 
     g_state_mutex = xSemaphoreCreateMutex();
     g_lvgl_mutex  = xSemaphoreCreateMutex();
-    g_cmd_queue   = xQueueCreate(16, sizeof(lk_cmd_t));
+    g_cmd_queue   = xQueueCreate(64, sizeof(lk_cmd_t));
 
     configASSERT(g_state_mutex);
     configASSERT(g_lvgl_mutex);

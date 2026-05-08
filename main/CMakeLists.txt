@@ -6,7 +6,7 @@ idf_component_register(
         "touch.c"
         "encoder.c"
         "lyngdorf.c"
-        "upnp.c"
+        "metadata.c"
         "ui.c"
         "wifi_manager.c"
         "web_server.c"
@@ -25,4 +25,5 @@ idf_component_register(
         esp_event
         esp_netif
         lwip
+        json
 )

@@ -71,26 +71,28 @@ static const char *HTML_HEAD =
 
 static const char *HTML_FOOT =
     "<button type='submit'>Save &amp; Restart</button></form>"
-    "<p class='note'>Single tap = mute &nbsp;|&nbsp; Double tap = play/pause &nbsp;|&nbsp; Rotate = volume</p>"
+    "<p class='note'>Tap = mute &nbsp;|&nbsp; Rotate = volume</p>"
     "</body></html>";
 
 // ---------------------------------------------------------------------------
 // GET / — serve config form
 // ---------------------------------------------------------------------------
 static esp_err_t get_handler(httpd_req_t *req) {
-    char ssid[64]={0}, pass[64]={0}, amp_ip[64]={0}, upnp_url[256]={0};
-    uint32_t vol_step = DEFAULT_VOL_STEP;
-    uint32_t dim_secs = DEFAULT_DIM_SECS, sleep_secs = DEFAULT_SLEEP_SECS;
-    uint32_t haptic_en = DEFAULT_HAPTIC_EN;
+    char ssid[64]={0}, pass[64]={0}, amp_ip[64]={0};
+    uint32_t vol_step    = DEFAULT_VOL_STEP;
+    uint32_t dim_secs    = DEFAULT_DIM_SECS;
+    uint32_t sleep_secs  = DEFAULT_SLEEP_SECS;
+    uint32_t haptic_en   = DEFAULT_HAPTIC_EN;
+    uint32_t meta_poll_s = DEFAULT_META_POLL_S;
 
-    config_get_str(NVS_WIFI_SSID, ssid,     sizeof(ssid));
-    config_get_str(NVS_WIFI_PASS, pass,     sizeof(pass));
-    config_get_str(NVS_AMP_IP,    amp_ip,   sizeof(amp_ip));
-    config_get_str(NVS_UPNP_URL,  upnp_url, sizeof(upnp_url));
-    config_get_u32(NVS_VOL_STEP,   &vol_step,   DEFAULT_VOL_STEP);
-    config_get_u32(NVS_DIM_SECS,   &dim_secs,   DEFAULT_DIM_SECS);
-    config_get_u32(NVS_SLEEP_SECS, &sleep_secs, DEFAULT_SLEEP_SECS);
-    config_get_u32(NVS_HAPTIC_EN,  &haptic_en,  DEFAULT_HAPTIC_EN);
+    config_get_str(NVS_WIFI_SSID, ssid,   sizeof(ssid));
+    config_get_str(NVS_WIFI_PASS, pass,   sizeof(pass));
+    config_get_str(NVS_AMP_IP,    amp_ip, sizeof(amp_ip));
+    config_get_u32(NVS_VOL_STEP,    &vol_step,    DEFAULT_VOL_STEP);
+    config_get_u32(NVS_DIM_SECS,    &dim_secs,    DEFAULT_DIM_SECS);
+    config_get_u32(NVS_SLEEP_SECS,  &sleep_secs,  DEFAULT_SLEEP_SECS);
+    config_get_u32(NVS_HAPTIC_EN,   &haptic_en,   DEFAULT_HAPTIC_EN);
+    config_get_u32(NVS_META_POLL_S, &meta_poll_s, DEFAULT_META_POLL_S);
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, HTML_HEAD);
@@ -100,11 +102,11 @@ static esp_err_t get_handler(httpd_req_t *req) {
         "<label>WiFi SSID<input name='ssid' value='%s'></label>"
         "<label>WiFi Password<input name='pass' type='password' value='%s'></label>"
         "<label>Amp IP<input name='amp_ip' value='%s' placeholder='192.168.1.x'></label>"
-        "<label>Vol Step (0.1 dB units, e.g. 5=0.5dB/detent)"
+        "<label>Vol Step (0.1 dB units, e.g. 10=1.0dB/detent)"
         "<input name='vol_step' type='number' min='1' max='50' value='%lu'></label>"
-        "<label>UPnP URL (blank=auto-discover)"
-        "<input name='upnp_url' value='%s' placeholder='http://x.x.x.x:port/path'></label>",
-        ssid, pass, amp_ip, (unsigned long)vol_step, upnp_url);
+        "<label>Track-info refresh (seconds, 1-60)"
+        "<input name='meta_poll_s' type='number' min='1' max='60' value='%lu'></label>",
+        ssid, pass, amp_ip, (unsigned long)vol_step, (unsigned long)meta_poll_s);
     httpd_resp_sendstr_chunk(req, buf);
 
     char buf2[512];
@@ -134,25 +136,25 @@ static esp_err_t post_handler(httpd_req_t *req) {
     if (len <= 0) return ESP_FAIL;
     body[len] = '\0';
 
-    char ssid[64]={0}, pass[64]={0}, amp_ip[64]={0}, upnp_url[256]={0};
-    char vol_s[8]={0}, dim_s[8]={0}, sleep_s[8]={0}, haptic_s[4]={0};
-    get_field(body, "ssid",       ssid,     sizeof(ssid));
-    get_field(body, "pass",       pass,     sizeof(pass));
-    get_field(body, "amp_ip",     amp_ip,   sizeof(amp_ip));
-    get_field(body, "upnp_url",   upnp_url, sizeof(upnp_url));
-    get_field(body, "vol_step",   vol_s,    sizeof(vol_s));
-    get_field(body, "dim_secs",   dim_s,    sizeof(dim_s));
-    get_field(body, "sleep_secs", sleep_s,  sizeof(sleep_s));
+    char ssid[64]={0}, pass[64]={0}, amp_ip[64]={0};
+    char vol_s[8]={0}, dim_s[8]={0}, sleep_s[8]={0}, haptic_s[4]={0}, meta_s[8]={0};
+    get_field(body, "ssid",        ssid,    sizeof(ssid));
+    get_field(body, "pass",        pass,    sizeof(pass));
+    get_field(body, "amp_ip",      amp_ip,  sizeof(amp_ip));
+    get_field(body, "vol_step",    vol_s,   sizeof(vol_s));
+    get_field(body, "dim_secs",    dim_s,   sizeof(dim_s));
+    get_field(body, "sleep_secs",  sleep_s, sizeof(sleep_s));
+    get_field(body, "meta_poll_s", meta_s,  sizeof(meta_s));
     // Checkbox is absent from POST body when unchecked — treat absence as 0
     bool haptic_checked = get_field(body, "haptic_en", haptic_s, sizeof(haptic_s));
 
     if (ssid[0])    config_set_str(NVS_WIFI_SSID, ssid);
     if (pass[0])    config_set_str(NVS_WIFI_PASS, pass);
     if (amp_ip[0])  config_set_str(NVS_AMP_IP,   amp_ip);
-    config_set_str(NVS_UPNP_URL, upnp_url);
-    if (vol_s[0])   config_set_u32(NVS_VOL_STEP,   (uint32_t)atoi(vol_s));
-    if (dim_s[0])   config_set_u32(NVS_DIM_SECS,   (uint32_t)atoi(dim_s));
-    if (sleep_s[0]) config_set_u32(NVS_SLEEP_SECS, (uint32_t)atoi(sleep_s));
+    if (vol_s[0])   config_set_u32(NVS_VOL_STEP,    (uint32_t)atoi(vol_s));
+    if (dim_s[0])   config_set_u32(NVS_DIM_SECS,    (uint32_t)atoi(dim_s));
+    if (sleep_s[0]) config_set_u32(NVS_SLEEP_SECS,  (uint32_t)atoi(sleep_s));
+    if (meta_s[0])  config_set_u32(NVS_META_POLL_S, (uint32_t)atoi(meta_s));
     config_set_u32(NVS_HAPTIC_EN, haptic_checked ? 1 : 0);
 
     ESP_LOGI(TAG, "config saved — rebooting");
