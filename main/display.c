@@ -97,16 +97,25 @@ esp_err_t display_init(void) {
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, &io_cfg, &io));
 
     // Panel driver (espressif/esp_lcd_st77916 component)
+    // use_qspi_interface MUST be set — without it the driver defaults to
+    // single-line SPI mode and the panel receives wrong commands (blank screen).
+    static const st77916_vendor_config_t vendor_cfg = {
+        .flags = { .use_qspi_interface = 1 },
+    };
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num  = LCD_RST_GPIO,
-        .rgb_ele_order   = LCD_RGB_ELEMENT_ORDER_BGR,
+        .rgb_ele_order   = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel  = 16,
+        .vendor_config   = (void *)&vendor_cfg,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st77916(io, &panel_cfg, &s_panel));
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, true));
+    // Note: colour inversion is handled inside the component's QSPI init
+    // sequence (command 0x21). Do NOT call esp_lcd_panel_invert_color here —
+    // double-inverting makes the panel appear correct in SPI mode tests but
+    // breaks QSPI mode.
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
     // Backlight

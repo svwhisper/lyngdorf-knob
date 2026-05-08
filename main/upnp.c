@@ -90,29 +90,51 @@ static esp_err_t ssdp_discover(char *location, size_t loc_len) {
         return ESP_FAIL;
     }
 
+    // If the amp IP is configured, filter responses to only accept the amp.
+    // Other UPnP devices (e.g. Sonos) on the same network respond first and
+    // would otherwise be selected incorrectly.
+    char amp_ip[64] = {0};
+    config_get_str(NVS_AMP_IP, amp_ip, sizeof(amp_ip));
+
     char buf[1024];
-    struct sockaddr_in src;
-    socklen_t src_len = sizeof(src);
-    int n = recvfrom(sock, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&src, &src_len);
+    esp_err_t result = ESP_ERR_TIMEOUT;
+
+    while (1) {
+        struct sockaddr_in src;
+        socklen_t src_len = sizeof(src);
+        int n = recvfrom(sock, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&src, &src_len);
+        if (n <= 0) break;   // socket timed out — no (more) responses
+        buf[n] = '\0';
+
+        // Skip responses from devices that are not the amp
+        if (amp_ip[0]) {
+            char src_ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &src.sin_addr, src_ip, sizeof(src_ip));
+            if (strcmp(src_ip, amp_ip) != 0) {
+                ESP_LOGD(TAG, "SSDP: ignoring response from %s (not amp)", src_ip);
+                continue;
+            }
+        }
+
+        // Find LOCATION header
+        const char *loc = strstr(buf, "LOCATION:");
+        if (!loc) loc = strstr(buf, "location:");
+        if (!loc) continue;
+        loc += 9;
+        while (*loc == ' ') loc++;
+
+        size_t i = 0;
+        while (*loc && *loc != '\r' && *loc != '\n' && i < loc_len - 1)
+            location[i++] = *loc++;
+        location[i] = '\0';
+
+        ESP_LOGI(TAG, "SSDP found amp at: %s", location);
+        result = ESP_OK;
+        break;
+    }
+
     close(sock);
-
-    if (n <= 0) return ESP_ERR_TIMEOUT;
-    buf[n] = '\0';
-
-    // Find LOCATION header
-    const char *loc = strstr(buf, "LOCATION:");
-    if (!loc) loc = strstr(buf, "location:");
-    if (!loc) return ESP_FAIL;
-    loc += 9;
-    while (*loc == ' ') loc++;
-
-    size_t i = 0;
-    while (*loc && *loc != '\r' && *loc != '\n' && i < loc_len - 1)
-        location[i++] = *loc++;
-    location[i] = '\0';
-
-    ESP_LOGI(TAG, "SSDP found device at: %s", location);
-    return ESP_OK;
+    return result;
 }
 
 // Fetch device description XML and extract AVTransport control URL
