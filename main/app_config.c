@@ -27,8 +27,9 @@ esp_err_t app_config_init(void) {
     configASSERT(g_lvgl_mutex);
     configASSERT(g_cmd_queue);
 
-    g_state.vol_db10 = -300;
-    g_state.dirty    = true;
+    g_state.vol_db10    = -300;
+    g_state.battery_pct = -1;       // unknown until first ADC read
+    g_state.dirty       = true;
 
     ESP_LOGI(TAG, "initialized");
     return ESP_OK;

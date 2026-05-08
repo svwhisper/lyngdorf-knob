@@ -12,6 +12,7 @@ idf_component_register(
         "web_server.c"
         "power.c"
         "haptic.c"
+        "battery.c"
         "esp_lcd_sh8601.c"
     INCLUDE_DIRS "."
     REQUIRES
@@ -26,4 +27,5 @@ idf_component_register(
         esp_netif
         lwip
         json
+        esp_adc
 )

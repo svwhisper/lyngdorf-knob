@@ -9,6 +9,7 @@
 #include "web_server.h"
 #include "power.h"
 #include "haptic.h"
+#include "battery.h"
 
 #include "esp_log.h"
 #include "lvgl.h"
@@ -115,6 +116,9 @@ void app_main(void) {
 
     // 7. Power management (dim/sleep timers, loads NVS config)
     ESP_ERROR_CHECK(power_init());
+
+    // 7b. Battery monitoring (ADC1 ch0, periodic 10 s read)
+    ESP_ERROR_CHECK(battery_init());
 
     // 8. WiFi (starts STA or AP, launches web server on connect)
     ESP_ERROR_CHECK(wifi_manager_init());

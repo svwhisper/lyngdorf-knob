@@ -20,6 +20,7 @@ Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50
                 Track Title
                 Album
                 🔊  ▶          ← tappable mute & play/pause icons
+                  NN%           ← battery percentage
                 status line     ← WiFi / amp connection
 ```
 
@@ -27,8 +28,13 @@ Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50
 - **Numeric volume** — top of display, always visible, updates live during rotation
 - **Track info** — artist / title / album, three centered lines (Montserrat 16pt white), pulled from the amp's HTTP/JSON API every 3 s
 - **Icons** — speaker (🔊 teal / 🔇 red) and play/pause (▶ / ⏸ teal), 32 pt, tap to toggle
+- **Battery** — small (12pt) percentage below the icons, gray when ≥21%, red when ≤20%
 - **Idle** — display dims after `dim_secs` of inactivity, then panel-sleeps after `sleep_secs`. Any rotation or touch wakes instantly.
 - **Haptic** — DRV2605 LRA buzz on every icon tap (encoder uses its mechanical detents; no electronic haptic on rotation)
+
+### Boot splash
+
+On boot the project name appears at the top with a QR code linking to this repo (`https://github.com/svwhisper/lyngdorf-knob`) below it. Held for 6 seconds, then fades over 1 second to reveal the regular UI. Long enough to scan with a phone — the QR has a 6 px white quiet-zone border so cameras lock on quickly.
 
 ## Hardware
 
@@ -39,6 +45,7 @@ Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50
 | Touch | CST816D capacitive over I2C (port 0) |
 | Encoder | Switch-style, two GPIOs ([not standard quadrature](#hardware-quirks)) |
 | Haptic | DRV2605 LRA driver over I2C (shared bus with touch) |
+| Battery | Li-Po, voltage on ADC1 ch0 (GPIO 1) via 2× divider |
 | WiFi | 2.4 GHz 802.11 b/g/n |
 
 ### Pin assignments
@@ -76,6 +83,7 @@ main/metadata.c/h      — esp_http_client + cJSON track-info fetch + play/pause
 main/ui.c/h            — LVGL widgets: arc, vol/artist/title/album labels, icons
 main/power.c/h         — dim/sleep timers, activity signalling
 main/haptic.c/h        — DRV2605 LRA driver, single-effect playback
+main/battery.c/h       — ADC1 ch0 oneshot + curve-fit cali, 10 s periodic poll
 main/wifi_manager.c/h  — STA mode with AP fallback after 5 failed retries
 main/web_server.c/h    — HTTP config form at http://<device-ip>/
 main/app_config.c/h    — NVS get/set, shared lk_state_t, g_state_mutex, g_cmd_queue

@@ -63,6 +63,8 @@
 #define DEFAULT_META_POLL_S 3       // poll amp's HTTP metadata API every N s
 #define METADATA_HTTP_PORT  8080    // amp's JSON HTTP API port
 
+#define APP_VERSION         "1.0.0" // shown on boot splash
+
 // ---------------------------------------------------------------------------
 // Shared application state (written by net task, read by UI task)
 // ---------------------------------------------------------------------------
@@ -78,6 +80,7 @@ typedef struct {
     bool     amp_connected;
     bool     upnp_available;
     bool     wifi_connected;
+    int8_t   battery_pct;       // 0..100, or -1 if unknown / not yet sampled
     bool     dirty;             // true when UI needs refresh
 } lk_state_t;
 

@@ -21,6 +21,7 @@ static lv_obj_t *s_vol_lbl      = NULL;
 static lv_obj_t *s_status_lbl   = NULL;
 static lv_obj_t *s_mute_icon    = NULL;
 static lv_obj_t *s_play_icon    = NULL;
+static lv_obj_t *s_battery_lbl  = NULL;
 
 // Track last state for diff-only updates
 static int32_t  s_last_vol    = INT32_MIN;
@@ -31,6 +32,7 @@ static char     s_last_artist[64] = {0};
 static char     s_last_album[64]  = {0};
 static bool     s_last_amp_conn  = false;
 static bool     s_last_wifi_conn = false;
+static int8_t   s_last_battery  = -2;       // sentinel: differs from initial -1
 
 // ---------------------------------------------------------------------------
 // Colour palette
@@ -145,6 +147,47 @@ void ui_apply_pending_state(void) {
         s_last_amp_conn  = snap.amp_connected;
         s_last_wifi_conn = snap.wifi_connected;
     }
+
+    // Battery percentage (-1 = unknown / not yet sampled)
+    if (snap.battery_pct != s_last_battery) {
+        if (snap.battery_pct < 0) {
+            lv_label_set_text(s_battery_lbl, "");
+        } else {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%d%%", (int)snap.battery_pct);
+            lv_label_set_text(s_battery_lbl, buf);
+            // Red when low (≤20 %), grey otherwise
+            lv_obj_set_style_text_color(s_battery_lbl,
+                snap.battery_pct <= 20 ? COL_MUTE : COL_GRAY, 0);
+        }
+        s_last_battery = snap.battery_pct;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Boot splash — black overlay panel with title / version / credit, fades
+// out after a short hold. Held for 2 s, fades over 1 s, then deletes itself.
+// ---------------------------------------------------------------------------
+static void splash_set_opa(void *obj, int32_t opa) {
+    lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)opa, 0);
+}
+
+static void splash_done_cb(lv_anim_t *a) {
+    lv_obj_del((lv_obj_t *)a->var);   // panel + child labels
+}
+
+static void splash_start_fade(lv_timer_t *t) {
+    lv_obj_t *panel = (lv_obj_t *)t->user_data;
+    lv_timer_del(t);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, panel);
+    lv_anim_set_exec_cb(&a, splash_set_opa);
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_time(&a, 1000);
+    lv_anim_set_ready_cb(&a, splash_done_cb);
+    lv_anim_start(&a);
 }
 
 // ---------------------------------------------------------------------------
@@ -226,12 +269,48 @@ esp_err_t ui_init(void) {
     lv_obj_set_style_text_font(s_play_icon,  &lv_font_montserrat_32, 0);
     lv_obj_align(s_play_icon, LV_ALIGN_CENTER, 45, 90);
 
-    // ---- Status (connection info, bottom centre) -------------------------
+    // ---- Battery percentage (small, below the icons) --------------------
+    s_battery_lbl = lv_label_create(scr);
+    lv_label_set_text(s_battery_lbl, "");
+    lv_obj_set_style_text_color(s_battery_lbl, COL_GRAY, 0);
+    lv_obj_set_style_text_font(s_battery_lbl,  &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_align(s_battery_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_battery_lbl, LV_ALIGN_CENTER, 0, 125);
+
+    // ---- Status (connection info, very bottom) --------------------------
     s_status_lbl = lv_label_create(scr);
     lv_label_set_text(s_status_lbl, LV_SYMBOL_WIFI " Connecting...");
     lv_obj_set_style_text_color(s_status_lbl, COL_DIM, 0);
     lv_obj_set_style_text_font(s_status_lbl,  &lv_font_montserrat_12, 0);
-    lv_obj_align(s_status_lbl, LV_ALIGN_CENTER, 0, 130);
+    lv_obj_align(s_status_lbl, LV_ALIGN_CENTER, 0, 150);
+
+    // ---- Boot splash overlay (created last → on top of everything) ------
+    lv_obj_t *splash = lv_obj_create(scr);
+    lv_obj_remove_style_all(splash);
+    lv_obj_set_size(splash, LCD_H_RES, LCD_V_RES);
+    lv_obj_set_style_bg_color(splash, COL_BG, 0);
+    lv_obj_set_style_bg_opa(splash, LV_OPA_COVER, 0);
+    lv_obj_align(splash, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(splash, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Project name at the top of the splash
+    lv_obj_t *sp_title = lv_label_create(splash);
+    lv_label_set_text(sp_title, "lyngdorf-knob");
+    lv_obj_set_style_text_color(sp_title, COL_WHITE, 0);
+    lv_obj_set_style_text_font(sp_title,  &lv_font_montserrat_20, 0);
+    lv_obj_align(sp_title, LV_ALIGN_CENTER, 0, -110);
+
+    // QR code linking to the GitHub repo
+    static const char *REPO_URL = "https://github.com/svwhisper/lyngdorf-knob";
+    lv_obj_t *qr = lv_qrcode_create(splash, 200, lv_color_black(), lv_color_white());
+    lv_qrcode_update(qr, REPO_URL, strlen(REPO_URL));
+    // White quiet zone (border) around the modules — phones need it to lock on.
+    lv_obj_set_style_border_color(qr, lv_color_white(), 0);
+    lv_obj_set_style_border_width(qr, 6, 0);
+    lv_obj_align(qr, LV_ALIGN_CENTER, 0, 25);
+
+    // Hold for 6 s (long enough to scan), then start a 1 s fade to transparent.
+    lv_timer_create(splash_start_fade, 6000, splash);
 
     ESP_LOGI(TAG, "UI ready");
     return ESP_OK;
