@@ -85,6 +85,7 @@ typedef struct {
     bool     upnp_available;
     bool     wifi_connected;
     int8_t   battery_pct;       // 0..100, or -1 if unknown / not yet sampled
+    int16_t  battery_mv;        // last measured rail voltage in mV (-1 = unknown)
     bool     dirty;             // true when UI needs refresh
 } lk_state_t;
 

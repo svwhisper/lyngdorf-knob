@@ -72,6 +72,26 @@ After this, the same config form is available at `http://<device's-IP>/` wheneve
 | Display stays blank after flashing | The device might be in AP mode waiting for WiFi config — look for the `LyngdorfKnob` WiFi network. |
 | Can't find `LyngdorfKnob` WiFi | Power-cycle the device. The AP appears within 5 seconds of boot if no WiFi is configured. |
 
+### Viewing logs over the network
+
+The device keeps an in-memory ring buffer of its recent log output (~8 KB, roughly the last 100–150 lines) and exposes it over HTTP at:
+
+> **`http://<device-ip>/log`**
+
+This is useful when the device is on battery — there's no USB-CDC monitor to attach, but you can still see what it's doing.
+
+Open it in a browser (refresh for updates), or from a terminal:
+
+```bash
+# Show current log buffer once
+curl -s http://192.168.3.214/log
+
+# Live tail — refresh every 2 seconds, last 30 lines
+while true; do clear; curl -s http://192.168.3.214/log | tail -30; sleep 2; done
+```
+
+The same log output goes to USB-CDC when a cable is connected, so you don't lose anything by using one or the other.
+
 ### Manual flash (advanced fallback)
 
 If you can't or won't use a Chromium browser, you can flash from the command line:

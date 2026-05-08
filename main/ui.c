@@ -185,13 +185,20 @@ void ui_apply_pending_state(void) {
         s_last_wifi_conn = snap.wifi_connected;
     }
 
-    // Battery percentage (-1 = unknown / not yet sampled)
+    // Battery percentage + raw mV (-1 = unknown / not yet sampled).
+    // The mV is shown for calibration — once the % is reliable across the
+    // full charge range we can drop it back to just the percentage.
     if (snap.battery_pct != s_last_battery) {
         if (snap.battery_pct < 0) {
             lv_label_set_text(s_battery_lbl, "");
         } else {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%d%%", (int)snap.battery_pct);
+            char buf[24];
+            if (snap.battery_mv > 0) {
+                snprintf(buf, sizeof(buf), "%d%%  %dmV",
+                         (int)snap.battery_pct, (int)snap.battery_mv);
+            } else {
+                snprintf(buf, sizeof(buf), "%d%%", (int)snap.battery_pct);
+            }
             lv_label_set_text(s_battery_lbl, buf);
             // Red when low (≤20 %), grey otherwise
             lv_obj_set_style_text_color(s_battery_lbl,

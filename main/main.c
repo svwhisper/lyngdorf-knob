@@ -10,6 +10,7 @@
 #include "power.h"
 #include "haptic.h"
 #include "battery.h"
+#include "log_buffer.h"
 
 #include "esp_log.h"
 #include "esp_pm.h"
@@ -113,6 +114,11 @@ void app_main(void) {
     // by the monitor. 300 ms is enough on macOS / Linux; bump to 1500 if
     // you want guaranteed-visible logs during development.
     vTaskDelay(pdMS_TO_TICKS(300));
+
+    // Install in-memory log capture so http://<device-ip>/log shows the
+    // recent log history (~8 KB). Useful when the device is on battery and
+    // a USB serial monitor isn't an option.
+    log_buffer_init();
 
     ESP_LOGI(TAG, "LyngdorfKnob starting (wake_cause=%d%s ext1_mask=0x%llx)",
              (int)wake,

@@ -29,6 +29,7 @@ esp_err_t app_config_init(void) {
 
     g_state.vol_db10    = -300;
     g_state.battery_pct = -1;       // unknown until first ADC read
+    g_state.battery_mv  = -1;
     g_state.dirty       = true;
 
     ESP_LOGI(TAG, "initialized");

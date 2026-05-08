@@ -19,9 +19,15 @@ static const char *TAG = "battery";
 #define BAT_ADC_BITWIDTH      ADC_BITWIDTH_12
 #define BAT_DIVIDER           2
 
-// Li-Po battery voltage range (ish — flat curve in the middle)
-#define BAT_FULL_MV           4200
-#define BAT_EMPTY_MV          3300
+// Calibrated against this hardware's measured voltages — the rail we read
+// (BAT_ADC, top of the 10k/10k divider from "5V") sits ~0.3 V below the
+// raw cell voltage because of the charge path, so a freshly-charged cell
+// shows ~3.93 V at the ADC, not 4.2 V. Set FULL slightly below the
+// observed full-charge reading so any normal variance still shows 100%.
+// Empty matches the typical Li-Po cutoff (~3.0 V cell) shifted by the
+// same offset. Tweak both by ±50 mV per 10 % if behaviour drifts.
+#define BAT_FULL_MV           3920
+#define BAT_EMPTY_MV          3000
 
 // Poll cadence — battery doesn't change fast
 #define BAT_POLL_MS           10000
@@ -72,9 +78,13 @@ static void battery_tick(void *arg) {
             g_state.battery_pct = pct;
             g_state.dirty = true;
         }
+        if (g_state.battery_mv != (int16_t)mv) {
+            g_state.battery_mv = (int16_t)mv;
+            g_state.dirty = true;
+        }
         xSemaphoreGive(g_state_mutex);
     }
-    if (pct >= 0) ESP_LOGD(TAG, "%d mV → %d%%", mv, pct);
+    if (pct >= 0) ESP_LOGI(TAG, "%d mV → %d%%", mv, pct);
 }
 
 esp_err_t battery_init(void) {

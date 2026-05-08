@@ -2,14 +2,15 @@
 
 #include <stdbool.h>
 #include "esp_err.h"
-#include "esp_attr.h"
 
 esp_err_t power_init(void);
 
-// ISR-safe (IRAM_ATTR): records that user activity occurred. Called from the
-// encoder GPIO ISR and from touch / haptic paths. The actual wake transition
-// happens on the next power_tick().
-void IRAM_ATTR power_signal_activity(void);
+// ISR-safe: records that user activity occurred. Called from the encoder
+// GPIO ISR and from touch / haptic paths. The actual wake transition
+// happens on the next power_tick(). The implementation is IRAM_ATTR;
+// the attribute lives only on the definition to avoid conflicting
+// section() declarations between the prototype and definition.
+void power_signal_activity(void);
 
 // Call from ui_task while holding g_lvgl_mutex: drives dim / panel-sleep /
 // deep-sleep state machine.

@@ -13,6 +13,7 @@ idf_component_register(
         "power.c"
         "haptic.c"
         "battery.c"
+        "log_buffer.c"
         "esp_lcd_sh8601.c"
     INCLUDE_DIRS "."
     REQUIRES

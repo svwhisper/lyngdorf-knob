@@ -1,5 +1,6 @@
 #include "web_server.h"
 #include "app_config.h"
+#include "log_buffer.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -163,6 +164,21 @@ static esp_err_t post_handler(httpd_req_t *req) {
 }
 
 // ---------------------------------------------------------------------------
+// GET /log — dumps the in-memory log ring buffer as plain text. Useful when
+// the device is on battery (no USB-CDC monitor available). Visit the URL in
+// a browser, or `curl http://<device-ip>/log` from a shell.
+// ---------------------------------------------------------------------------
+static esp_err_t log_handler(httpd_req_t *req) {
+    static char buf[8192];   // sized to match the ring buffer
+    size_t n = log_buffer_dump(buf, sizeof(buf));
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    // No-cache so browser refresh always fetches fresh data
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, buf, n);
+    return ESP_OK;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 esp_err_t web_server_start(void) {
@@ -178,10 +194,12 @@ esp_err_t web_server_start(void) {
 
     httpd_uri_t get_uri  = { .uri = "/",     .method = HTTP_GET,  .handler = get_handler  };
     httpd_uri_t post_uri = { .uri = "/save", .method = HTTP_POST, .handler = post_handler };
+    httpd_uri_t log_uri  = { .uri = "/log",  .method = HTTP_GET,  .handler = log_handler  };
     httpd_register_uri_handler(s_srv, &get_uri);
     httpd_register_uri_handler(s_srv, &post_uri);
+    httpd_register_uri_handler(s_srv, &log_uri);
 
-    ESP_LOGI(TAG, "config server at http://<device-ip>/");
+    ESP_LOGI(TAG, "config server at http://<device-ip>/  (logs at /log)");
     return ESP_OK;
 }
 
