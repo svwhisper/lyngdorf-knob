@@ -2,8 +2,6 @@
 dependencies:
   lvgl/lvgl:
     version: ">=8.3.0,<9.0.0"
-  espressif/esp_lcd_st77916:
-    version: ">=0.0.2"
   espressif/esp_lcd_touch:
     version: ">=1.1.0"
   espressif/mdns:

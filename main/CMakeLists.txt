@@ -12,6 +12,7 @@ idf_component_register(
         "web_server.c"
         "power.c"
         "haptic.c"
+        "esp_lcd_sh8601.c"
     INCLUDE_DIRS "."
     REQUIRES
         nvs_flash

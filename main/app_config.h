@@ -23,7 +23,7 @@
 #define LCD_H_RES       360
 #define LCD_V_RES       360
 #define LCD_SPI_HOST    SPI2_HOST
-#define LCD_SPI_HZ      (40 * 1000 * 1000)
+#define LCD_SPI_HZ      (20 * 1000 * 1000)  // try 20 MHz first; 40 MHz showed faint banding
 
 // CST816D capacitive touch (I2C)
 #define TOUCH_SDA_GPIO  11
