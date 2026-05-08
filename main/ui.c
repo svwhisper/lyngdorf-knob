@@ -22,9 +22,6 @@ static lv_obj_t *s_status_lbl   = NULL;
 static lv_obj_t *s_mute_icon    = NULL;
 static lv_obj_t *s_play_icon    = NULL;
 
-// Timer to hide vol label after rotation stops
-static lv_timer_t *s_vol_hide_timer = NULL;
-
 // Track last state for diff-only updates
 static int32_t  s_last_vol    = INT32_MIN;
 static bool     s_last_muted  = false;
@@ -61,56 +58,12 @@ static int vol_to_pct(int32_t vol_db10) {
 }
 
 // ---------------------------------------------------------------------------
-// Volume overlay fade-out animation (5 s opacity 255 → 0)
+// Update volume label text (called when vol changes)
 // ---------------------------------------------------------------------------
-static void set_vol_opa(void *obj, int32_t opa) {
-    lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)opa, 0);
-}
-
-static void vol_fade_done_cb(lv_anim_t *a) {
-    lv_obj_add_flag(s_vol_lbl, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_opa(s_vol_lbl, LV_OPA_COVER, 0);  // reset for next use
-}
-
-// Fires 500 ms after the last rotation; starts the 5 s fade
-static void vol_hide_cb(lv_timer_t *t) {
-    lv_timer_del(t);
-    s_vol_hide_timer = NULL;
-    // Reveal track labels beneath the fading overlay
-    lv_obj_clear_flag(s_title_lbl,  LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_artist_lbl, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_album_lbl,  LV_OBJ_FLAG_HIDDEN);
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, s_vol_lbl);
-    lv_anim_set_exec_cb(&a, set_vol_opa);
-    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_time(&a, 5000);
-    lv_anim_set_ready_cb(&a, vol_fade_done_cb);
-    lv_anim_start(&a);
-}
-
-// ---------------------------------------------------------------------------
-// Show volume overlay (called on encoder rotation)
-// ---------------------------------------------------------------------------
-static void ui_show_vol_overlay(int32_t vol_db10) {
+static void ui_update_vol_label(int32_t vol_db10) {
     char buf[24];
     snprintf(buf, sizeof(buf), "%.1f dB", vol_db10 / 10.0f);
     lv_label_set_text(s_vol_lbl, buf);
-
-    // Cancel any in-progress fade and restore full opacity
-    lv_anim_del(s_vol_lbl, set_vol_opa);
-    lv_obj_set_style_opa(s_vol_lbl, LV_OPA_COVER, 0);
-    lv_obj_clear_flag(s_vol_lbl, LV_OBJ_FLAG_HIDDEN);
-
-    // Hide track info while vol overlay is fully visible
-    lv_obj_add_flag(s_title_lbl,  LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_artist_lbl, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_album_lbl,  LV_OBJ_FLAG_HIDDEN);
-
-    // (Re)start 500 ms debounce — fires when rotation has stopped
-    if (s_vol_hide_timer) lv_timer_reset(s_vol_hide_timer);
-    else s_vol_hide_timer = lv_timer_create(vol_hide_cb, 500, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -137,17 +90,23 @@ void ui_apply_pending_state(void) {
 
     // Now update LVGL (caller holds g_lvgl_mutex)
 
-    // Volume arc
+    // Volume arc + always-visible numeric label at top
     if (snap.vol_db10 != s_last_vol) {
         lv_arc_set_value(s_vol_arc, vol_to_pct(snap.vol_db10));
-        ui_show_vol_overlay(snap.vol_db10);
+        ui_update_vol_label(snap.vol_db10);
         s_last_vol = snap.vol_db10;
     }
 
-    // Mute icon
+    // Mute icon — always visible. Swap symbol + colour to indicate state:
+    //   unmuted → speaker (teal, same as play icon), muted → speaker-with-X (red)
     if (snap.muted != s_last_muted) {
-        if (snap.muted) lv_obj_clear_flag(s_mute_icon, LV_OBJ_FLAG_HIDDEN);
-        else            lv_obj_add_flag(s_mute_icon, LV_OBJ_FLAG_HIDDEN);
+        if (snap.muted) {
+            lv_label_set_text(s_mute_icon, LV_SYMBOL_MUTE);
+            lv_obj_set_style_text_color(s_mute_icon, COL_MUTE, 0);
+        } else {
+            lv_label_set_text(s_mute_icon, LV_SYMBOL_VOLUME_MAX);
+            lv_obj_set_style_text_color(s_mute_icon, COL_PLAY, 0);
+        }
         // Dim arc when muted
         lv_obj_set_style_arc_color(s_vol_arc,
             snap.muted ? COL_DIM : COL_ARC_ACTIVE, LV_PART_INDICATOR);
@@ -245,21 +204,21 @@ esp_err_t ui_init(void) {
     lv_obj_set_style_text_align(s_album_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(s_album_lbl, LV_ALIGN_CENTER, 0, 25);
 
-    // ---- Volume overlay (shown on rotation, hidden otherwise) ------------
+    // ---- Volume label (always visible, top of display) -------------------
     s_vol_lbl = lv_label_create(scr);
-    lv_label_set_text(s_vol_lbl, "");
+    lv_label_set_text(s_vol_lbl, "--.- dB");
     lv_obj_set_style_text_color(s_vol_lbl, COL_WHITE, 0);
     lv_obj_set_style_text_font(s_vol_lbl,  &lv_font_montserrat_20, 0);
-    lv_obj_align(s_vol_lbl, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_flag(s_vol_lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(s_vol_lbl, LV_ALIGN_CENTER, 0, -110);
 
     // ---- Mute / Play icons (below album line, 2x larger) ----------------
+    // Mute icon starts as a plain speaker (unmuted state) in teal — matches
+    // the play icon. Switches to speaker-with-X in red when state.muted goes true.
     s_mute_icon = lv_label_create(scr);
-    lv_label_set_text(s_mute_icon, LV_SYMBOL_MUTE);
-    lv_obj_set_style_text_color(s_mute_icon, COL_MUTE, 0);
+    lv_label_set_text(s_mute_icon, LV_SYMBOL_VOLUME_MAX);
+    lv_obj_set_style_text_color(s_mute_icon, COL_PLAY, 0);
     lv_obj_set_style_text_font(s_mute_icon,  &lv_font_montserrat_32, 0);
     lv_obj_align(s_mute_icon, LV_ALIGN_CENTER, -45, 90);
-    lv_obj_add_flag(s_mute_icon, LV_OBJ_FLAG_HIDDEN);
 
     s_play_icon = lv_label_create(scr);
     lv_label_set_text(s_play_icon, LV_SYMBOL_PLAY);

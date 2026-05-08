@@ -58,6 +58,7 @@ static void net_task(void *arg) {
         lk_cmd_t cmd;
         int32_t  vol_delta_total  = 0;
         bool     mute_toggle_req  = false;
+        bool     play_pause_req   = false;
 
         if (xQueueReceive(g_cmd_queue, &cmd, pdMS_TO_TICKS(20)) == pdTRUE) {
             // First command arrived — drain anything else that's already queued
@@ -66,12 +67,13 @@ static void net_task(void *arg) {
                 switch (cmd.type) {
                     case CMD_VOL_CHANGE:  vol_delta_total += cmd.param; break;
                     case CMD_MUTE_TOGGLE: mute_toggle_req = true;        break;
-                    case CMD_PLAY_PAUSE:  /* not currently triggered */  break;
+                    case CMD_PLAY_PAUSE:  play_pause_req  = true;        break;
                 }
             } while (xQueueReceive(g_cmd_queue, &cmd, 0) == pdTRUE);
 
             if (vol_delta_total != 0) lyngdorf_vol_delta(vol_delta_total);
             if (mute_toggle_req)      lyngdorf_mute_toggle();
+            if (play_pause_req)       metadata_play_pause();
         }
 
         TickType_t now = xTaskGetTickCount();

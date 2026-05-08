@@ -83,7 +83,7 @@ static esp_err_t lyngdorf_send_cmd(const char *cmd) {
         lyngdorf_close();
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "tx: %s (%d bytes)", cmd, n);
+    ESP_LOGD(TAG, "tx: %s (%d bytes)", cmd, n);
     return ESP_OK;
 }
 
@@ -175,6 +175,12 @@ void lyngdorf_mute_toggle(void) {
 // Query current vol & mute state from amp; updates g_state.
 // Track metadata is fetched separately by metadata_task via the amp's HTTP
 // JSON API (RIO doesn't expose track info on this firmware).
+//
+// Reads up to 8 lines (the amp may interleave echoes / unsolicited state
+// notifications with our query replies). Each parsed value overwrites the
+// previous one — only the LAST observed value is committed to g_state, in
+// a single mutex-protected write at the end. This avoids a flicker where
+// the UI was reading intermediate values mid-poll.
 void lyngdorf_poll_state(void) {
     if (s_amp_ip[0] == '\0') return;
 
@@ -182,27 +188,37 @@ void lyngdorf_poll_state(void) {
     if (lyngdorf_send_cmd("!MUTE?") != ESP_OK) return;
 
     char line[64];
-    bool got_vol = false, got_mute = false;
-    for (int i = 0; i < 8 && !(got_vol && got_mute); i++) {
+    bool    got_vol = false,  got_mute = false;
+    int32_t latest_vol = 0;
+    bool    latest_muted = false;
+
+    for (int i = 0; i < 8; i++) {
         int n = lyngdorf_recv_line(line, sizeof(line));
-        if (n <= 0) break;
-        ESP_LOGI(TAG, "rx: %s", line);
+        if (n <= 0) break;   // recv timeout — amp has stopped sending
+        ESP_LOGD(TAG, "rx: %s", line);
 
         int32_t vol;
         bool muted;
         if (parse_vol_response(line, &vol)) {
+            latest_vol = vol;
             got_vol = true;
-            if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-                if (g_state.vol_db10 != vol) { g_state.vol_db10 = vol; g_state.dirty = true; }
-                xSemaphoreGive(g_state_mutex);
-            }
         } else if (parse_mute_response(line, &muted)) {
+            latest_muted = muted;
             got_mute = true;
-            if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-                if (g_state.muted != muted) { g_state.muted = muted; g_state.dirty = true; }
-                xSemaphoreGive(g_state_mutex);
-            }
         }
+    }
+
+    if ((got_vol || got_mute) &&
+        xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (got_vol && g_state.vol_db10 != latest_vol) {
+            g_state.vol_db10 = latest_vol;
+            g_state.dirty = true;
+        }
+        if (got_mute && g_state.muted != latest_muted) {
+            g_state.muted = latest_muted;
+            g_state.dirty = true;
+        }
+        xSemaphoreGive(g_state_mutex);
     }
 }
 

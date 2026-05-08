@@ -159,6 +159,62 @@ static void metadata_task(void *arg) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Play/pause toggle. Hits the amp's setData endpoint with the same URL the
+// amp's own web UI sends — a GET (despite the "setData" name) carrying a
+// JSON value of {"control":"pause"}. The amp toggles between play/pause
+// regardless of current state, so caller doesn't need to know it.
+// ---------------------------------------------------------------------------
+esp_err_t metadata_play_pause(void) {
+    if (s_amp_ip[0] == '\0') return ESP_ERR_INVALID_STATE;
+
+    // Optimistic state flip BEFORE the HTTP roundtrip — the request takes
+    // 100-500 ms and waiting for it would make the icon change feel laggy.
+    // The next metadata poll (within METADATA_POLL_S seconds) will correct
+    // the state if the request actually failed.
+    if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        g_state.playing = !g_state.playing;
+        g_state.dirty = true;
+        xSemaphoreGive(g_state_mutex);
+    }
+
+    char url[300];
+    // path=player:player/control  roles=activate
+    // value={"control":"pause"} (URL-encoded as %7B%22control%22%3A%22pause%22%7D)
+    snprintf(url, sizeof(url),
+             "http://%s:%d/api/setData"
+             "?path=player%%3Aplayer%%2Fcontrol"
+             "&roles=activate"
+             "&value=%%7B%%22control%%22%%3A%%22pause%%22%%7D",
+             s_amp_ip, METADATA_HTTP_PORT);
+
+    esp_http_client_config_t cfg = {
+        .url               = url,
+        .timeout_ms        = 1500,
+        .keep_alive_enable = false,
+        .method            = HTTP_METHOD_GET,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) return ESP_FAIL;
+    esp_http_client_set_header(client, "User-Agent", "lyngdorf-knob/1.0");
+    esp_http_client_set_header(client, "Connection", "close");
+
+    esp_err_t err = esp_http_client_perform(client);
+    int status = (err == ESP_OK) ? esp_http_client_get_status_code(client) : 0;
+    esp_http_client_cleanup(client);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "play/pause request failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    if (status != 200) {
+        ESP_LOGW(TAG, "play/pause HTTP %d", status);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "play/pause toggled");
+    return ESP_OK;
+}
+
 esp_err_t metadata_init(void) {
     config_get_str(NVS_AMP_IP, s_amp_ip, sizeof(s_amp_ip));
     if (s_amp_ip[0] == '\0') {

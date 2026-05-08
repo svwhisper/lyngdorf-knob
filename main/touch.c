@@ -1,6 +1,7 @@
 #include "touch.h"
 #include "app_config.h"
 #include "power.h"
+#include "haptic.h"
 
 #include "driver/i2c.h"
 #include "esp_log.h"
@@ -21,10 +22,28 @@ static const char *TAG = "touch";
 // Maximum movement during a press for it to count as a tap (vs. a swipe)
 #define TAP_MAX_MOVE_PX     40
 
-// Simple two-state tap: a clean press-and-release toggles mute on lift.
-// No double-tap detection; no play/pause from touch.
+// Touch hit regions in display coordinates (0..359). These mirror the icon
+// positions defined in ui_init: mute icon at LVGL (-45,+90) = display
+// (135, 270); play icon at LVGL (+45, +90) = display (225, 270).
+// Hit area is a 70 px square around each centre — generous so finger lands
+// on the icon even with imprecise tapping.
+#define MUTE_HIT_X1   100
+#define MUTE_HIT_X2   170
+#define MUTE_HIT_Y1   235
+#define MUTE_HIT_Y2   305
+#define PLAY_HIT_X1   190
+#define PLAY_HIT_X2   260
+#define PLAY_HIT_Y1   235
+#define PLAY_HIT_Y2   305
+
 static bool     s_prev_down = false;
 static uint16_t s_press_x = 0, s_press_y = 0;
+
+static inline bool point_in_box(uint16_t x, uint16_t y,
+                                 uint16_t x1, uint16_t y1,
+                                 uint16_t x2, uint16_t y2) {
+    return x >= x1 && x <= x2 && y >= y1 && y <= y2;
+}
 
 static esp_err_t cst816_read(uint8_t reg, uint8_t *buf, size_t len) {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -50,22 +69,30 @@ static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     uint16_t x = ((buf[0] & 0x0F) << 8) | buf[1];
     uint16_t y = ((buf[2] & 0x0F) << 8) | buf[3];
 
-    // Rising edge: finger touched down — record start position
+    // Rising edge: finger just touched down. Fire the icon command
+    // immediately so the action feels instant — no waiting for lift.
     if (!s_prev_down && currently_down) {
         power_signal_activity();
         s_press_x = x;
         s_press_y = y;
-    }
 
-    // Falling edge: finger lifted — fire mute if it was a stationary tap
-    if (s_prev_down && !currently_down) {
-        uint16_t dx = (x > s_press_x) ? (x - s_press_x) : (s_press_x - x);
-        uint16_t dy = (y > s_press_y) ? (y - s_press_y) : (s_press_y - y);
-        if (dx < TAP_MAX_MOVE_PX && dy < TAP_MAX_MOVE_PX) {
-            lk_cmd_t cmd = { .type = CMD_MUTE_TOGGLE, .param = 0 };
+        lk_cmd_t cmd = { .type = 0, .param = 0 };
+        bool fire = false;
+        if (point_in_box(x, y, MUTE_HIT_X1, MUTE_HIT_Y1,
+                                MUTE_HIT_X2, MUTE_HIT_Y2)) {
+            cmd.type = CMD_MUTE_TOGGLE;
+            fire = true;
+        } else if (point_in_box(x, y, PLAY_HIT_X1, PLAY_HIT_Y1,
+                                       PLAY_HIT_X2, PLAY_HIT_Y2)) {
+            cmd.type = CMD_PLAY_PAUSE;
+            fire = true;
+        }
+        if (fire) {
+            haptic_play();          // tactile confirmation of icon hit
             xQueueSend(g_cmd_queue, &cmd, 0);
         }
     }
+    // Falling edge: nothing to do; we already fired on press.
 
     s_prev_down   = currently_down;
     data->point.x = x;

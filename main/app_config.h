@@ -46,7 +46,6 @@
 #define NVS_VOL_STEP        "vol_step"
 #define NVS_DIM_SECS        "dim_secs"
 #define NVS_SLEEP_SECS      "sleep_secs"
-#define NVS_HAPTIC_EN       "haptic_en"
 #define NVS_META_POLL_S     "meta_poll_s"   // metadata poll interval, seconds
 
 // ---------------------------------------------------------------------------
@@ -61,7 +60,6 @@
 #define DEFAULT_DIM_PCT     20      // dimmed backlight %
 #define DEFAULT_DIM_SECS    30      // seconds idle before dimming (0 = disabled)
 #define DEFAULT_SLEEP_SECS  120     // seconds idle before sleep  (0 = disabled)
-#define DEFAULT_HAPTIC_EN   0       // haptic off by default (knob has mechanical feedback)
 #define DEFAULT_META_POLL_S 3       // poll amp's HTTP metadata API every N s
 #define METADATA_HTTP_PORT  8080    // amp's JSON HTTP API port
 

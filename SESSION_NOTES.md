@@ -1,5 +1,5 @@
 # lyngdorf-knob session notes
-_Last updated: 2026-05-08 — knob is fully functional; what follows is "more changes" work_
+_Last updated: 2026-05-09 — knob is feature-complete and shipping_
 
 ## Device
 Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (SH8601 QSPI 360×360 round LCD)
@@ -21,13 +21,16 @@ Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (SH8601 QSPI 360×360 round LCD)
 |---|---|
 | Display (SH8601 QSPI, 50 kHz backlight PWM, no banding) | ✅ |
 | Volume control (encoder → !VOLCH → amp; live, no lag) | ✅ |
-| Volume sync from remote / app (5 s poll) | ✅ |
-| Mute via tap (single tap = mute) | ✅ |
-| Mute sync from remote / app | ✅ |
-| Track metadata via amp HTTP API at port 8080 | ✅ |
-| Web config (WiFi, amp IP, vol step, dim, sleep, haptic, meta poll) | ✅ |
+| Volume sync from remote / app (5 s RIO poll) | ✅ |
+| Mute via tap on speaker icon (always-visible, swap glyph + colour) | ✅ |
+| Mute sync from remote / app, no flicker | ✅ |
+| Play/pause via tap on play icon (HTTP toggle + optimistic UI flip) | ✅ |
+| Track metadata via amp HTTP API at port 8080 (3 s poll) | ✅ |
+| Numeric volume always visible at top of display | ✅ |
+| Three centered text lines (artist / title / album, all 16 pt white) | ✅ |
+| Haptic on icon tap (always-on, no config option) | ✅ |
+| Web config (WiFi, amp IP, vol step, dim, sleep, meta poll) | ✅ |
 | Power management (dim/sleep timers) | ✅ |
-| Haptic (default OFF — knob has mechanical detents) | ✅ |
 | WiFi STA + AP fallback for first-time setup | ✅ |
 
 ## Architecture (current)
@@ -92,10 +95,8 @@ delays encoder dispatch.
 - Latest: `8b9185b` "Working knob: encoder fixes, mute, metadata via amp HTTP API, UI polish"
 - Push when the user explicitly asks. Iterate locally otherwise.
 
-## Open / next-up work
-User said "we have more changes". Awaiting their next ask. Potentially:
-- Album-art / icon URL from the API payload
+## Possible future work (not currently planned)
+- Album-art via `trackRoles.icon` URL (JPEG decode + LVGL image widget)
 - Long-poll via `/api/pollQueue` for instant metadata updates instead of 3 s polling
-- Source-name / sample-rate display
+- Source-name / sample-rate / bitrate display
 - Different layout iterations
-- Other features

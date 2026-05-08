@@ -1,7 +1,6 @@
 #include "encoder.h"
 #include "app_config.h"
 #include "power.h"
-#include "haptic.h"
 
 #include "driver/gpio.h"
 #include "esp_timer.h"
@@ -57,15 +56,15 @@ void encoder_process_events(void) {
     int delta = atomic_exchange(&s_delta, 0);
     if (delta == 0) return;
 
-    haptic_play();  // one tick per coalesced batch — safe here (UI task, I2C allowed)
+    // No haptic_play here — the encoder has mechanical detents that provide
+    // tactile feedback already. Haptic is reserved for icon taps (touch.c)
+    // where there is no mechanical feedback.
 
     lk_cmd_t cmd = {
         .type  = CMD_VOL_CHANGE,
-        .param = delta * s_vol_step,   // e.g. 1 detent × 5 = 0.5 dB
+        .param = delta * s_vol_step,   // e.g. 1 detent × 10 = 1.0 dB
     };
-    BaseType_t r = xQueueSend(g_cmd_queue, &cmd, 0);
-    ESP_LOGI(TAG, "encoder delta=%d → param=%d queue_send=%d",
-             delta, (int)cmd.param, (int)r);
+    xQueueSend(g_cmd_queue, &cmd, 0);
 }
 
 // ---------------------------------------------------------------------------

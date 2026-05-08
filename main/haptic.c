@@ -20,8 +20,7 @@ static const char *TAG = "haptic";
 // Effect 7 = "Soft Bump 100%" — crisp, light feel for encoder detents
 #define HAPTIC_EFFECT   7
 
-static bool s_ready   = false;
-static bool s_enabled = true;
+static bool s_ready = false;
 
 static esp_err_t reg_write(uint8_t reg, uint8_t val) {
     i2c_cmd_handle_t h = i2c_cmd_link_create();
@@ -36,10 +35,6 @@ static esp_err_t reg_write(uint8_t reg, uint8_t val) {
 }
 
 esp_err_t haptic_init(void) {
-    uint32_t en;
-    config_get_u32(NVS_HAPTIC_EN, &en, DEFAULT_HAPTIC_EN);
-    s_enabled = (en != 0);
-
     // Wake from standby — this also confirms the chip is present
     if (reg_write(REG_MODE, 0x00) != ESP_OK) {
         ESP_LOGW(TAG, "DRV2605 not found at 0x%02X — haptic unavailable", DRV2605_ADDR);
@@ -52,11 +47,11 @@ esp_err_t haptic_init(void) {
     reg_write(REG_WAVESEQ1, 0x00);          // slot 1 = end of sequence
 
     s_ready = true;
-    ESP_LOGI(TAG, "DRV2605 ready — haptic %s", s_enabled ? "enabled" : "disabled");
+    ESP_LOGI(TAG, "DRV2605 ready");
     return ESP_OK;
 }
 
 void haptic_play(void) {
-    if (!s_ready || !s_enabled) return;
+    if (!s_ready) return;
     reg_write(REG_GO, 0x01);    // effect already in sequencer — just fire
 }
