@@ -13,17 +13,30 @@
 
 static const char *TAG = "display";
 
-static esp_lcd_panel_handle_t s_panel = NULL;
+static esp_lcd_panel_handle_t s_panel    = NULL;
+static lv_disp_drv_t          s_disp_drv;   // file-scope: callback fires after display_init returns
 
 // ---------------------------------------------------------------------------
-// LVGL flush callback
+// SPI DMA completion callback — called from ISR once each color transfer is done.
+// LVGL must NOT reuse the buffer until this fires; signalling too early causes
+// the hash-noise pattern seen when lv_disp_flush_ready() was called inline.
+// ---------------------------------------------------------------------------
+static bool lvgl_flush_ready_cb(esp_lcd_panel_io_handle_t panel_io,
+                                 esp_lcd_panel_io_event_data_t *edata,
+                                 void *user_ctx) {
+    lv_disp_flush_ready(&s_disp_drv);
+    return false;   // false = do not yield to a higher-priority task from ISR
+}
+
+// ---------------------------------------------------------------------------
+// LVGL flush callback — queues the SPI DMA transfer; ready signal comes later
 // ---------------------------------------------------------------------------
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map) {
     esp_lcd_panel_draw_bitmap(s_panel,
                               area->x1, area->y1,
                               area->x2 + 1, area->y2 + 1,
                               color_map);
-    lv_disp_flush_ready(drv);
+    // lv_disp_flush_ready() is called from lvgl_flush_ready_cb once DMA completes.
 }
 
 // ---------------------------------------------------------------------------
@@ -85,14 +98,15 @@ esp_err_t display_init(void) {
     // Panel IO
     esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_io_spi_config_t io_cfg = {
-        .cs_gpio_num       = LCD_CS_GPIO,
-        .dc_gpio_num       = -1,
-        .spi_mode          = 0,
-        .pclk_hz           = LCD_SPI_HZ,
-        .trans_queue_depth = 10,
-        .lcd_cmd_bits      = 32,
-        .lcd_param_bits    = 8,
-        .flags.quad_mode   = true,
+        .cs_gpio_num          = LCD_CS_GPIO,
+        .dc_gpio_num          = -1,
+        .spi_mode             = 0,
+        .pclk_hz              = LCD_SPI_HZ,
+        .trans_queue_depth    = 10,
+        .on_color_trans_done  = lvgl_flush_ready_cb,  // signal LVGL after DMA completes
+        .lcd_cmd_bits         = 32,
+        .lcd_param_bits       = 8,
+        .flags.quad_mode      = true,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, &io_cfg, &io));
 
@@ -132,13 +146,12 @@ esp_err_t display_init(void) {
     static lv_disp_draw_buf_t draw_buf;
     lv_disp_draw_buf_init(&draw_buf, buf1, buf2, LCD_H_RES * (LCD_V_RES / 10));
 
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res    = LCD_H_RES;
-    disp_drv.ver_res    = LCD_V_RES;
-    disp_drv.flush_cb   = lvgl_flush_cb;
-    disp_drv.draw_buf   = &draw_buf;
-    lv_disp_drv_register(&disp_drv);
+    lv_disp_drv_init(&s_disp_drv);
+    s_disp_drv.hor_res  = LCD_H_RES;
+    s_disp_drv.ver_res  = LCD_V_RES;
+    s_disp_drv.flush_cb = lvgl_flush_cb;
+    s_disp_drv.draw_buf = &draw_buf;
+    lv_disp_drv_register(&s_disp_drv);
 
     // 2 ms tick timer
     const esp_timer_create_args_t tick_args = {

@@ -12,7 +12,7 @@ static const char *TAG = "upnp";
 
 #define SSDP_ADDR       "239.255.255.250"
 #define SSDP_PORT       1900
-#define SSDP_TIMEOUT_MS 4000
+#define SSDP_TIMEOUT_MS 2000
 
 // Stored AVTransport control URL (discovered or configured)
 static char s_control_url[256] = {0};
@@ -62,12 +62,16 @@ static void url_decode(char *s) {
 // SSDP discovery — find amp's AVTransport control URL
 // ---------------------------------------------------------------------------
 static esp_err_t ssdp_discover(char *location, size_t loc_len) {
+    // Use ssdp:all so the Lyngdorf responds even if it doesn't advertise the
+    // AVTransport service type explicitly in SSDP (some renderers only answer
+    // the broad search).  The amp IP filter below ensures we only act on the
+    // response from our amp.
     const char *msearch =
         "M-SEARCH * HTTP/1.1\r\n"
         "HOST: 239.255.255.250:1900\r\n"
         "MAN: \"ssdp:discover\"\r\n"
         "MX: 3\r\n"
-        "ST: urn:schemas-upnp-org:service:AVTransport:1\r\n\r\n";
+        "ST: ssdp:all\r\n\r\n";
 
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return ESP_FAIL;

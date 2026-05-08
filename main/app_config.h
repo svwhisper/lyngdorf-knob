@@ -61,7 +61,7 @@
 #define DEFAULT_DIM_PCT     20      // dimmed backlight %
 #define DEFAULT_DIM_SECS    30      // seconds idle before dimming (0 = disabled)
 #define DEFAULT_SLEEP_SECS  120     // seconds idle before sleep  (0 = disabled)
-#define DEFAULT_HAPTIC_EN   1       // haptic feedback on by default
+#define DEFAULT_HAPTIC_EN   0       // haptic off by default (knob has mechanical feedback)
 
 // ---------------------------------------------------------------------------
 // Shared application state (written by net task, read by UI task)
