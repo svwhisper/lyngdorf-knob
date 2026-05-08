@@ -115,7 +115,26 @@ The first returns a JSON array; the payload object is the first element with a `
 
 The second is a toggle — same URL whether currently playing or paused; the amp picks the right direction.
 
-## Building
+## Install (no build environment required)
+
+For users who just want the firmware on a device, the easiest path is the
+**browser-based installer**:
+
+> 👉 **<https://svwhisper.github.io/lyngdorf-knob/>**
+
+1. Plug the Waveshare board into a USB port.
+2. Open the link above in **Chrome**, **Edge**, or **Brave** (Safari and Firefox
+   don't yet support the WebSerial API used here).
+3. Click *Install* and pick the device from the serial port list.
+4. Wait ~30 seconds for flashing.
+
+Works on Windows, macOS, and Linux. The ESP32-S3 has a native USB controller
+so no driver install is needed on any of them.
+
+After flashing, follow the *First boot* instructions below to set up WiFi and
+the amp's IP address.
+
+## Building from source
 
 ### Prerequisites
 - [ESP-IDF 5.2+](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/)

@@ -1,6 +1,7 @@
 #include "metadata.h"
 #include "app_config.h"
 #include "wifi_manager.h"
+#include "power.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -155,7 +156,11 @@ static void metadata_task(void *arg) {
     }
     while (1) {
         fetch_now_playing();
-        vTaskDelay(pdMS_TO_TICKS(s_poll_ms));
+        // Active tier: configured cadence (default 3 s).
+        // Idle tier (panel asleep): stretch to 60 s — keeps the play/pause
+        // state syncing but at much lower duty cycle.
+        uint32_t period_ms = power_is_idle() ? 60000 : s_poll_ms;
+        vTaskDelay(pdMS_TO_TICKS(period_ms));
     }
 }
 

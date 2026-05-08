@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build firmware with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2.3
+          target: esp32s3
+          path: '.'
+
+      - name: Create merged firmware binary
+        run: |
+          # Bundle bootloader + partition table + app into a single image
+          # so the web installer can flash it at offset 0 in one shot.
+          python -m esptool --chip esp32s3 merge_bin \
+            -o build/lyngdorf-knob-merged.bin \
+            --flash_mode dio --flash_size 16MB --flash_freq 80m \
+            0x0     build/bootloader/bootloader.bin \
+            0x8000  build/partition_table/partition-table.bin \
+            0x10000 build/lyngdorf-knob.bin
+
+      - name: Update manifest version
+        run: |
+          # Sync version in docs/manifest.json with the pushed tag (vX.Y.Z → X.Y.Z)
+          VER="${GITHUB_REF#refs/tags/v}"
+          sed -i 's|"version": "[^"]*"|"version": "'"$VER"'"|' docs/manifest.json
+          sed -i 's|releases/download/v[^/]*/|releases/download/v'"$VER"'/|' docs/manifest.json
+          cat docs/manifest.json
+
+      - name: Commit manifest update back to main
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add docs/manifest.json
+          git commit -m "Bump manifest to ${GITHUB_REF#refs/tags/}" || echo "no changes"
+          git push origin HEAD:main || echo "push skipped"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/lyngdorf-knob-merged.bin
+            build/lyngdorf-knob.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+          generate_release_notes: true

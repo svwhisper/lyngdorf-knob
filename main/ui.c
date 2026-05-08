@@ -34,6 +34,10 @@ static bool     s_last_amp_conn  = false;
 static bool     s_last_wifi_conn = false;
 static int8_t   s_last_battery  = -2;       // sentinel: differs from initial -1
 
+// WiFi info for status line (set by wifi_manager during boot)
+static char     s_wifi_ssid[32] = {0};
+static char     s_wifi_ip[24]   = {0};
+
 // ---------------------------------------------------------------------------
 // Colour palette
 // ---------------------------------------------------------------------------
@@ -75,6 +79,24 @@ void ui_show_status(const char *msg) {
     if (xSemaphoreTake(g_lvgl_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         lv_label_set_text(s_status_lbl, msg);
         xSemaphoreGive(g_lvgl_mutex);
+    }
+}
+
+void ui_set_wifi_info(const char *ssid, const char *ip) {
+    if (ssid) {
+        strncpy(s_wifi_ssid, ssid, sizeof(s_wifi_ssid) - 1);
+        s_wifi_ssid[sizeof(s_wifi_ssid) - 1] = '\0';
+    }
+    if (ip) {
+        strncpy(s_wifi_ip, ip, sizeof(s_wifi_ip) - 1);
+        s_wifi_ip[sizeof(s_wifi_ip) - 1] = '\0';
+    }
+    // Force the status line to re-render on the next ui_apply_pending_state
+    // by inverting one of the "last" trackers.
+    s_last_wifi_conn = !s_last_wifi_conn;
+    if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        g_state.dirty = true;
+        xSemaphoreGive(g_state_mutex);
     }
 }
 
@@ -135,12 +157,27 @@ void ui_apply_pending_state(void) {
         strncpy(s_last_album,  snap.album,  sizeof(s_last_album)  - 1);
     }
 
-    // Connection status line
+    // Connection status line — informative during boot:
+    //   no WiFi yet:                  "Connecting to <ssid>..."
+    //   WiFi up, amp not yet:         "as <ip>"
+    //   both up:                      "" (empty, lets track info breathe)
     if (snap.amp_connected != s_last_amp_conn || snap.wifi_connected != s_last_wifi_conn) {
+        char buf[80];
         if (!snap.wifi_connected) {
-            lv_label_set_text(s_status_lbl, LV_SYMBOL_WIFI " Connecting...");
+            if (s_wifi_ssid[0]) {
+                snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI " Connecting to %s...",
+                         s_wifi_ssid);
+            } else {
+                snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI " Connecting...");
+            }
+            lv_label_set_text(s_status_lbl, buf);
         } else if (!snap.amp_connected) {
-            lv_label_set_text(s_status_lbl, "Amp offline");
+            if (s_wifi_ip[0]) {
+                snprintf(buf, sizeof(buf), "as %s", s_wifi_ip);
+                lv_label_set_text(s_status_lbl, buf);
+            } else {
+                lv_label_set_text(s_status_lbl, "Amp offline");
+            }
         } else {
             lv_label_set_text(s_status_lbl, "");
         }
@@ -191,9 +228,10 @@ static void splash_start_fade(lv_timer_t *t) {
 }
 
 // ---------------------------------------------------------------------------
-// Build UI
+// Build UI. show_splash=false on wake from deep sleep — we want the live
+// UI ready as fast as possible, no QR splash needed.
 // ---------------------------------------------------------------------------
-esp_err_t ui_init(void) {
+esp_err_t ui_init(bool show_splash) {
     lv_obj_t *scr = lv_scr_act();
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
@@ -285,6 +323,10 @@ esp_err_t ui_init(void) {
     lv_obj_align(s_status_lbl, LV_ALIGN_CENTER, 0, 150);
 
     // ---- Boot splash overlay (created last → on top of everything) ------
+    if (!show_splash) {
+        ESP_LOGI(TAG, "UI ready (no splash — wake from deep sleep)");
+        return ESP_OK;
+    }
     lv_obj_t *splash = lv_obj_create(scr);
     lv_obj_remove_style_all(splash);
     lv_obj_set_size(splash, LCD_H_RES, LCD_V_RES);

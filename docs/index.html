@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>lyngdorf-knob installer</title>
+    <script
+      type="module"
+      src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"
+    ></script>
+    <style>
+      body{
+        font-family:system-ui,-apple-system,Segoe UI,sans-serif;
+        background:#111;color:#ddd;
+        max-width:600px;margin:60px auto;padding:0 24px;line-height:1.5;
+      }
+      h1{color:#00bfbf;margin-bottom:.2em}
+      h2{color:#00bfbf;margin-top:2.2em;font-size:1.05em;text-transform:uppercase;letter-spacing:.05em}
+      a{color:#00bfbf}
+      code{background:#222;padding:1px 5px;border-radius:3px;font-size:.95em}
+      .lead{font-size:1.05em;color:#bbb}
+      .install-row{margin:32px 0;text-align:center}
+      esp-web-install-button{--esp-tools-button-color:#111;--esp-tools-button-text-color:#fff;--esp-tools-button-border-radius:6px}
+      .note{color:#888;font-size:.9em;margin-top:1em}
+      ol li{margin:.5em 0}
+    </style>
+  </head>
+  <body>
+    <h1>lyngdorf-knob</h1>
+    <p class="lead">A physical volume / mute / play-pause controller for the
+       Lyngdorf TDAI-3400 amplifier, built on the Waveshare
+       ESP32-S3-Knob-Touch-LCD-1.8.</p>
+
+    <h2>Install</h2>
+    <p>Plug the device into USB, then click below. Works on
+       <strong>Windows</strong>, <strong>Mac</strong>, and Linux —
+       the browser handles flashing, nothing to install on your computer.</p>
+
+    <div class="install-row">
+      <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
+    </div>
+
+    <p class="note">
+      Requires <strong>Chrome</strong>, <strong>Edge</strong>, <strong>Brave</strong>,
+      or another Chromium-based browser. Safari and Firefox don't yet
+      support the WebSerial API used here. Mac users on Safari can grab
+      <a href="https://www.google.com/chrome/">Chrome</a> or
+      <a href="https://www.microsoft.com/edge">Edge</a> just for this one step.
+    </p>
+    <p class="note">
+      If your device isn't shown when you click <em>Install</em>, make sure
+      no other program is holding the serial port open
+      (Arduino IDE, <code>idf.py monitor</code>, etc.).
+    </p>
+
+    <h2>First-time setup</h2>
+    <ol>
+      <li>After flashing, the device starts an open WiFi access point named <code>LyngdorfKnob</code>.</li>
+      <li>Connect to it from your phone or computer, and open <code>http://192.168.4.1</code> in a browser.</li>
+      <li>Enter your home WiFi credentials and your Lyngdorf TDAI-3400's IP address. Save.</li>
+      <li>The device reboots, joins your WiFi, and is ready to use.</li>
+    </ol>
+
+    <h2>Source &amp; build from source</h2>
+    <p>Source code, schematics, and ESP-IDF build instructions:
+       <a href="https://github.com/svwhisper/lyngdorf-knob">github.com/svwhisper/lyngdorf-knob</a>.</p>
+  </body>
+</html>

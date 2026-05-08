@@ -20,6 +20,11 @@ CONFIG_LV_FONT_MONTSERRAT_32=y
 # LVGL QR code library (used on the boot splash)
 CONFIG_LV_USE_QRCODE=y
 
+# Power management — dynamic frequency scaling + automatic light-sleep when
+# tasks are idle. esp_pm_configure() at runtime decides which freq pair to use.
+CONFIG_PM_ENABLE=y
+CONFIG_PM_DFS_INIT_AUTO=y
+
 # Stack
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 

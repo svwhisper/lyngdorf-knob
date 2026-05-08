@@ -1,0 +1,17 @@
+{
+  "name": "lyngdorf-knob",
+  "version": "1.0.0",
+  "home_assistant_domain": "lyngdorf-knob",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "https://github.com/svwhisper/lyngdorf-knob/releases/download/v1.0.0/lyngdorf-knob-merged.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

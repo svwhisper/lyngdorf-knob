@@ -12,6 +12,8 @@
 #include "battery.h"
 
 #include "esp_log.h"
+#include "esp_pm.h"
+#include "esp_sleep.h"
 #include "lvgl.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -79,8 +81,10 @@ static void net_task(void *arg) {
 
         TickType_t now = xTaskGetTickCount();
 
-        // Poll Lyngdorf state every 5 s
-        if ((now - last_lyngdorf) >= pdMS_TO_TICKS(5000)) {
+        // Poll Lyngdorf state. Cadence stretches from 5 s (active) to 30 s
+        // (panel asleep / idle tier) to keep WiFi + CPU work down.
+        uint32_t lyngdorf_period_ms = power_is_idle() ? 30000 : 5000;
+        if ((now - last_lyngdorf) >= pdMS_TO_TICKS(lyngdorf_period_ms)) {
             if (wifi_manager_is_connected()) lyngdorf_poll_state();
             last_lyngdorf = now;
         }
@@ -91,7 +95,30 @@ static void net_task(void *arg) {
 // Entry point
 // ---------------------------------------------------------------------------
 void app_main(void) {
-    ESP_LOGI(TAG, "LyngdorfKnob starting");
+    // Detect why we're booting — cold reset vs. wake from deep sleep.
+    // Wake from deep sleep skips the 7-second QR-code splash so the live
+    // UI is back faster.
+    esp_sleep_wakeup_cause_t wake = esp_sleep_get_wakeup_cause();
+    bool from_deep_sleep = (wake == ESP_SLEEP_WAKEUP_EXT1) ||
+                           (wake == ESP_SLEEP_WAKEUP_GPIO);
+    ESP_LOGI(TAG, "LyngdorfKnob starting (wake_cause=%d%s)",
+             (int)wake, from_deep_sleep ? " — wake from deep sleep" : "");
+    if (wake == ESP_SLEEP_WAKEUP_EXT1) {
+        // Bitmask of which GPIO(s) triggered the wake — handy for diagnosing
+        // spurious wakes (e.g. a floating wake pin tripping immediately).
+        ESP_LOGI(TAG, "ext1 wake mask = 0x%llx", esp_sleep_get_ext1_wakeup_status());
+    }
+
+    // Enable dynamic frequency scaling + automatic light-sleep. Tasks that
+    // block on queues / semaphores / timers naturally let the CPU drop to
+    // its lowest power state until something actually happens.
+    esp_pm_config_t pm_cfg = {
+        .max_freq_mhz       = 240,
+        .min_freq_mhz       = 80,
+        .light_sleep_enable = true,
+    };
+    esp_err_t pm_err = esp_pm_configure(&pm_cfg);
+    if (pm_err != ESP_OK) ESP_LOGW(TAG, "pm_configure: %s", esp_err_to_name(pm_err));
 
     // 1. NVS + shared state
     ESP_ERROR_CHECK(app_config_init());
@@ -110,7 +137,7 @@ void app_main(void) {
 
     // 6. Build LVGL UI (must be after lv_init which happens in display_init)
     if (xSemaphoreTake(g_lvgl_mutex, portMAX_DELAY) == pdTRUE) {
-        ESP_ERROR_CHECK(ui_init());
+        ESP_ERROR_CHECK(ui_init(/*show_splash=*/!from_deep_sleep));
         xSemaphoreGive(g_lvgl_mutex);
     }
 

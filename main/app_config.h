@@ -28,11 +28,13 @@
 // CST816D capacitive touch (I2C)
 #define TOUCH_SDA_GPIO  11
 #define TOUCH_SCL_GPIO  12
+#define TOUCH_INT_GPIO  9        // active-low pulse on touch event (used as deep-sleep wake source)
+#define TOUCH_RST_GPIO  10       // touch controller reset (active low)
 #define TOUCH_I2C_PORT  I2C_NUM_0
 #define TOUCH_I2C_HZ    300000
 #define TOUCH_I2C_ADDR  0x15
 
-// Rotary encoder
+// Rotary encoder (switch-style: A or B briefly pulled low per detent click)
 #define ENC_A_GPIO      8
 #define ENC_B_GPIO      7
 
@@ -59,7 +61,9 @@
 #define DEFAULT_BL_PCT      80      // normal backlight %
 #define DEFAULT_DIM_PCT     20      // dimmed backlight %
 #define DEFAULT_DIM_SECS    30      // seconds idle before dimming (0 = disabled)
-#define DEFAULT_SLEEP_SECS  120     // seconds idle before sleep  (0 = disabled)
+#define DEFAULT_SLEEP_SECS  120     // seconds idle before panel-sleep (0 = disabled)
+#define DEEP_SLEEP_AFTER_S  300     // additional seconds in panel-sleep before deep sleep
+#define PAUSED_GRACE_S      120     // amp must have been not-playing this long before deep sleep
 #define DEFAULT_META_POLL_S 3       // poll amp's HTTP metadata API every N s
 #define METADATA_HTTP_PORT  8080    // amp's JSON HTTP API port
 

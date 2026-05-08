@@ -28,4 +28,5 @@ idf_component_register(
         lwip
         json
         esp_adc
+        esp_pm
 )

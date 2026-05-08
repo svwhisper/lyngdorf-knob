@@ -67,13 +67,15 @@ static void event_handler(void *arg, esp_event_base_t base,
         s_connected = true;
         s_retries   = 0;
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
-        ESP_LOGI(TAG, "IP: " IPSTR, IP2STR(&ev->ip_info.ip));
+        char ip_str[24];
+        snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ev->ip_info.ip));
+        ESP_LOGI(TAG, "IP: %s", ip_str);
+        ui_set_wifi_info(NULL, ip_str);     // remember IP for status line
         if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
             g_state.wifi_connected = true;
             g_state.dirty = true;
             xSemaphoreGive(g_state_mutex);
         }
-        ui_show_status("");
         web_server_start();
     }
 }
@@ -107,9 +109,16 @@ esp_err_t wifi_manager_init(void) {
     sta_cfg.sta.ssid    [sizeof(sta_cfg.sta.ssid)     - 1] = '\0';
     sta_cfg.sta.password[sizeof(sta_cfg.sta.password) - 1] = '\0';
 
+    ui_set_wifi_info(ssid, NULL);   // remember SSID for the status line
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // Use MAX_MODEM power-save by default — radio sleeps between beacons.
+    // Tier 2 (panel asleep) doesn't need to change it; we already use
+    // MAX_MODEM in that state too.
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
     ESP_LOGI(TAG, "connecting to %s...", ssid);
     return ESP_OK;
