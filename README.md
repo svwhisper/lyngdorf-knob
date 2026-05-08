@@ -2,15 +2,96 @@
 
 ESP-IDF firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** board, turning it into a physical volume / play-pause / mute controller for the **Lyngdorf TDAI-3400** amplifier.
 
-## What it does
-
 | Interaction | Action |
 |---|---|
 | Rotate encoder | Volume up / down (default **1.0 dB / detent**, configurable) |
-| Tap the speaker icon (left, teal) | Mute / unmute |
-| Tap the play/pause icon (right, teal) | Toggle play / pause |
+| Tap the speaker icon (left) | Mute / unmute |
+| Tap the play/pause icon (right) | Toggle play / pause |
 
-Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50 ms latency. Mute and play/pause flip the on-screen icon optimistically and confirm via the amp's reply / next state poll. The on-screen state mirrors changes made from the Lyngdorf remote, app, or front panel within a few seconds.
+Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50 ms latency. The on-screen state mirrors changes made from the Lyngdorf remote, app, or front panel within a few seconds.
+
+---
+
+## Install — no build environment needed
+
+The firmware is published as a pre-built binary you can flash directly from your browser. **Works on Windows, macOS, and Linux** — the ESP32-S3 has a native USB controller, so no drivers are required on any platform.
+
+### 1. Open the installer page
+
+> 👉 **<https://svwhisper.github.io/lyngdorf-knob/>**
+
+You need a **Chromium-based browser**: Chrome, Edge, Brave, Opera, or Vivaldi. Safari and Firefox don't (yet) support the WebSerial API the installer uses.
+
+| If you're on… | Use |
+|---|---|
+| **Windows** | Edge (preinstalled) or Chrome |
+| **macOS** | Chrome, Edge, or Brave (Safari users — install Chrome/Edge for this one step) |
+| **Linux** | Chrome, Chromium, Edge, or Brave |
+
+### 2. Plug the device in
+
+Connect the Waveshare board to your computer via USB-C. Both Windows 10/11 and macOS recognise it instantly with no driver install.
+
+> ℹ️ If a serial monitor / IDE on your computer (Arduino IDE, ESP-IDF `idf.py monitor`, PuTTY, etc.) is open on the device's port, **close it first** — only one program can hold the port at a time.
+
+### 3. Click *Install*
+
+On the installer page, click the **Install lyngdorf-knob** button. A serial-port picker opens — choose the device (it'll be labelled something like `USB JTAG/serial debug unit (COM5)` on Windows, `/dev/cu.usbmodem…` on macOS).
+
+Flashing takes about 30 seconds. The browser shows progress; the device displays nothing during this phase.
+
+### 4. First-boot WiFi setup
+
+When flashing completes the device reboots, shows a brief boot splash with a QR code, and then comes up needing WiFi credentials.
+
+1. With your phone or laptop, look for a WiFi network called **`LyngdorfKnob`** and connect to it (it's open, no password).
+2. Open a browser and visit **<http://192.168.4.1>**.
+3. Fill in the form:
+
+   | Field | What to put |
+   |---|---|
+   | **WiFi SSID** | Your home network name |
+   | **WiFi Password** | Your home network password |
+   | **Amp IP** | The Lyngdorf TDAI-3400's IP address — set a DHCP reservation in your router so it doesn't change |
+   | **Vol Step** | Leave at `10` for 1.0 dB per click. Use `5` for 0.5 dB / `15` for 1.5 dB / etc. |
+   | **Track-info refresh** | Leave at `3` (seconds) |
+   | **Dim display after** | Seconds idle before display dims (default 30, `0` = never) |
+   | **Sleep display after** | Seconds idle before display fully sleeps (default 120, `0` = never) |
+
+4. Click **Save**. The device reboots, joins your home WiFi, connects to the amp, and is ready to use.
+
+After this, the same config form is available at `http://<device's-IP>/` whenever you're on the same network — for changing settings or the amp's IP.
+
+### Troubleshooting
+
+| Symptom | Try |
+|---|---|
+| Browser says "this site requires WebSerial" | You're on Safari / Firefox. Switch to Chrome / Edge / Brave for the install step only. |
+| Device not in the serial-port picker | Close any other program holding the port (Arduino IDE, terminal monitor); unplug + replug the USB cable; try a different USB port. |
+| "Failed to connect" / "MD5 mismatch" mid-flash | Use a USB cable that supports data (cheap charging-only cables are common); try a directly-connected USB port instead of a hub. |
+| Display stays blank after flashing | The device might be in AP mode waiting for WiFi config — look for the `LyngdorfKnob` WiFi network. |
+| Can't find `LyngdorfKnob` WiFi | Power-cycle the device. The AP appears within 5 seconds of boot if no WiFi is configured. |
+
+### Manual flash (advanced fallback)
+
+If you can't or won't use a Chromium browser, you can flash from the command line:
+
+```bash
+# Install esptool (one-time)
+pip install esptool
+
+# Download the merged firmware from the latest release
+curl -LO https://github.com/svwhisper/lyngdorf-knob/releases/latest/download/lyngdorf-knob-merged.bin
+
+# Flash it (replace the port for your OS)
+#   macOS / Linux:  /dev/cu.usbmodem* or /dev/ttyUSB0
+#   Windows:        COM5  (check Device Manager for the actual port)
+esptool.py --chip esp32s3 -p /dev/cu.usbmodem* write_flash 0x0 lyngdorf-knob-merged.bin
+```
+
+After flashing, the same first-boot WiFi setup applies.
+
+---
 
 ## Display layout (360 × 360 round LCD)
 
@@ -115,26 +196,9 @@ The first returns a JSON array; the payload object is the first element with a `
 
 The second is a toggle — same URL whether currently playing or paused; the amp picks the right direction.
 
-## Install (no build environment required)
-
-For users who just want the firmware on a device, the easiest path is the
-**browser-based installer**:
-
-> 👉 **<https://svwhisper.github.io/lyngdorf-knob/>**
-
-1. Plug the Waveshare board into a USB port.
-2. Open the link above in **Chrome**, **Edge**, or **Brave** (Safari and Firefox
-   don't yet support the WebSerial API used here).
-3. Click *Install* and pick the device from the serial port list.
-4. Wait ~30 seconds for flashing.
-
-Works on Windows, macOS, and Linux. The ESP32-S3 has a native USB controller
-so no driver install is needed on any of them.
-
-After flashing, follow the *First boot* instructions below to set up WiFi and
-the amp's IP address.
-
 ## Building from source
+
+If you want to modify the firmware or are developing on top of it.
 
 ### Prerequisites
 - [ESP-IDF 5.2+](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/)
@@ -151,20 +215,13 @@ idf.py -p /dev/tty.usbmodem* flash monitor
 
 The component manager auto-fetches `lvgl/lvgl 8.3.x` and `espressif/esp_lcd_touch`. The SH8601 driver and cJSON are bundled (cJSON via the `json` IDF component).
 
-### First boot
+### Cutting a release
 
-With no WiFi credentials stored, the device starts an open access point named **LyngdorfKnob**. Connect to it and visit `http://192.168.4.1` to configure:
+Tag the commit you want to release and push the tag — a GitHub Actions workflow builds the firmware, attaches the merged binary to a GitHub Release, and updates `docs/manifest.json` so the install page picks up the new version.
 
-| Field | Default | Notes |
-|---|---|---|
-| WiFi SSID / Password | — | Required |
-| Amp IP | — | Static IP recommended (DHCP reservation is fine) |
-| Vol Step | 10 (= 1.0 dB / detent) | In 0.1 dB units; range 1–50 |
-| Track-info refresh | 3 s | Range 1–60 s |
-| Dim display after | 30 s | 0 = never |
-| Sleep display after | 120 s | 0 = never |
-
-After saving, the device reboots and joins the configured network. The config page is then available at `http://<device-ip>/`.
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
 
 ## Hardware quirks
 
