@@ -98,16 +98,26 @@ void app_main(void) {
     // Detect why we're booting — cold reset vs. wake from deep sleep.
     // Wake from deep sleep skips the 7-second QR-code splash so the live
     // UI is back faster.
+    // Capture wake reason and EXT1 mask EARLY — esp_sleep_get_*() must be
+    // called before any new sleep configuration. We stash and log later,
+    // because USB-CDC takes ~700 ms after wake to renumerate on the host
+    // and any logs emitted before that get dropped by the monitor.
     esp_sleep_wakeup_cause_t wake = esp_sleep_get_wakeup_cause();
+    uint64_t ext1_mask = (wake == ESP_SLEEP_WAKEUP_EXT1)
+                          ? esp_sleep_get_ext1_wakeup_status() : 0;
     bool from_deep_sleep = (wake == ESP_SLEEP_WAKEUP_EXT1) ||
                            (wake == ESP_SLEEP_WAKEUP_GPIO);
-    ESP_LOGI(TAG, "LyngdorfKnob starting (wake_cause=%d%s)",
-             (int)wake, from_deep_sleep ? " — wake from deep sleep" : "");
-    if (wake == ESP_SLEEP_WAKEUP_EXT1) {
-        // Bitmask of which GPIO(s) triggered the wake — handy for diagnosing
-        // spurious wakes (e.g. a floating wake pin tripping immediately).
-        ESP_LOGI(TAG, "ext1 wake mask = 0x%llx", esp_sleep_get_ext1_wakeup_status());
-    }
+
+    // Brief delay so USB-CDC has time to renumerate on the host before the
+    // first ESP_LOG line — otherwise the wake-cause diagnostic is dropped
+    // by the monitor. 300 ms is enough on macOS / Linux; bump to 1500 if
+    // you want guaranteed-visible logs during development.
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    ESP_LOGI(TAG, "LyngdorfKnob starting (wake_cause=%d%s ext1_mask=0x%llx)",
+             (int)wake,
+             from_deep_sleep ? " — wake from deep sleep" : "",
+             (unsigned long long)ext1_mask);
 
     // Enable dynamic frequency scaling + automatic light-sleep. Tasks that
     // block on queues / semaphores / timers naturally let the CPU drop to
