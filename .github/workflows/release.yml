@@ -15,23 +15,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build firmware with ESP-IDF
+      - name: Build + merge firmware with ESP-IDF
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.2.3
           target: esp32s3
           path: '.'
-
-      - name: Create merged firmware binary
-        run: |
-          # Bundle bootloader + partition table + app into a single image
-          # so the web installer can flash it at offset 0 in one shot.
-          python -m esptool --chip esp32s3 merge_bin \
-            -o build/lyngdorf-knob-merged.bin \
-            --flash_mode dio --flash_size 16MB --flash_freq 80m \
-            0x0     build/bootloader/bootloader.bin \
-            0x8000  build/partition_table/partition-table.bin \
-            0x10000 build/lyngdorf-knob.bin
+          # idf.py merge-bin runs INSIDE the IDF container where esptool
+          # is on PATH; running esptool in a separate later step fails
+          # because it isn't installed on the system Python.
+          command: idf.py build && idf.py merge-bin -o build/lyngdorf-knob-merged.bin
 
       - name: Update manifest version
         run: |
