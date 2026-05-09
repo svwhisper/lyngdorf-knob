@@ -1,6 +1,6 @@
 # lyngdorf-knob
 
-ESP-IDF firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** board, turning it into a physical volume / play-pause / mute controller for the **Lyngdorf TDAI-3400** amplifier.
+ESP-IDF firmware for the **[Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/esp32-s3-knob-touch-lcd-1.8.htm?sku=31623)** board, turning it into a physical volume / play-pause / mute controller for the **Lyngdorf TDAI-3400** amplifier.
 
 | Interaction | Action |
 |---|---|
@@ -130,7 +130,7 @@ After flashing, the same first-boot WiFi setup applies.
 - **Track info** — artist / title / album, three centered lines (Montserrat 16pt white), pulled from the amp's HTTP/JSON API every 3 s
 - **Icons** — speaker (🔊 teal / 🔇 red) and play/pause (▶ / ⏸ teal), 32 pt, tap to toggle
 - **Battery** — small (12pt) percentage below the icons, gray when ≥21%, red when ≤20%
-- **Idle** — display dims after `dim_secs` of inactivity, then panel-sleeps after `sleep_secs`. Any rotation or touch wakes instantly.
+- **Idle** — display dims after `dim_secs` of inactivity, then panel-sleeps after `sleep_secs`. Any rotation or touch wakes instantly. After a further 5 minutes idle (and the amp not playing) the device drops into **deep sleep** — wake by **rotating the knob** (touch is disabled in deep sleep so the touch controller can fully power down).
 - **Haptic** — DRV2605 LRA buzz on every icon tap (encoder uses its mechanical detents; no electronic haptic on rotation)
 
 ### Boot splash

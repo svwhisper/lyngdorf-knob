@@ -55,3 +55,25 @@ void haptic_play(void) {
     if (!s_ready) return;
     reg_write(REG_GO, 0x01);    // effect already in sequencer — just fire
 }
+
+void haptic_standby(void) {
+    if (!s_ready) return;
+    // MODE register: bit 6 = STANDBY. Datasheet quiescent ~1.5 mA active,
+    // ~few µA in standby. Don't bother checking error — we're about to
+    // cut power anyway.
+    reg_write(REG_MODE, 0x40);
+    s_ready = false;
+}
+
+void haptic_resume(void) {
+    if (s_ready) return;
+    // Mirror haptic_init: clear standby, re-program LRA mode + library +
+    // sequencer slot. If the chip was never present, the first write fails
+    // and we silently leave s_ready=false.
+    if (reg_write(REG_MODE, 0x00) != ESP_OK) return;
+    reg_write(REG_FEEDBACK, 0xB6);
+    reg_write(REG_LIBRARY,  0x06);
+    reg_write(REG_WAVESEQ0, HAPTIC_EFFECT);
+    reg_write(REG_WAVESEQ1, 0x00);
+    s_ready = true;
+}

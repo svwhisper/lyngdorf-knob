@@ -128,9 +128,14 @@ void app_main(void) {
     // Enable dynamic frequency scaling + automatic light-sleep. Tasks that
     // block on queues / semaphores / timers naturally let the CPU drop to
     // its lowest power state until something actually happens.
+    // min_freq_mhz=40 lets the DFS governor drop the CPU all the way down
+    // when nothing is happening. ESP32-S3 supports 40 / 80 / 160 / 240 as
+    // discrete frequencies; 40 is the lowest the PM driver will accept.
+    // Combined with tickless idle, residual CPU draw in Tier 1/2 idle
+    // periods drops by several mA.
     esp_pm_config_t pm_cfg = {
         .max_freq_mhz       = 240,
-        .min_freq_mhz       = 80,
+        .min_freq_mhz       = 40,
         .light_sleep_enable = true,
     };
     esp_err_t pm_err = esp_pm_configure(&pm_cfg);

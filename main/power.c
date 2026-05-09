@@ -1,6 +1,7 @@
 #include "power.h"
 #include "app_config.h"
 #include "display.h"
+#include "haptic.h"
 #include "wifi_manager.h"
 
 #include "driver/gpio.h"
@@ -66,31 +67,55 @@ static void cst816_drain(void) {
                                   &reg, 1, buf, sizeof(buf), pdMS_TO_TICKS(50));
 }
 
+// Put the CST816D into deep sleep (drops ~1.5 mA → ~5 µA). In this state
+// it does NOT scan for touches and will not pulse TP_INT — so we lose
+// touch as a wake source. The encoder remains as our wake path. The chip
+// resumes normal scanning after a hardware reset on next boot, which
+// touch_init() performs unconditionally.
+static void cst816_deep_sleep(void) {
+    uint8_t buf[2] = { 0xA5, 0x03 };   // reg 0xA5 = 0x03 → enter deep sleep
+    i2c_master_write_to_device(TOUCH_I2C_PORT, TOUCH_I2C_ADDR,
+                                buf, sizeof(buf), pdMS_TO_TICKS(50));
+}
+
 static void enter_deep_sleep(void) {
-    ESP_LOGW(TAG, "entering deep sleep — wake on touch (GPIO %d) or "
-                  "encoder (GPIO %d/%d)",
-             TOUCH_INT_GPIO, ENC_A_GPIO, ENC_B_GPIO);
+    ESP_LOGW(TAG, "entering deep sleep — wake on encoder (GPIO %d/%d)",
+             ENC_A_GPIO, ENC_B_GPIO);
 
-    // Panel + backlight fully off.
-    display_set_backlight(0);
+    // ---- Peripherals ---------------------------------------------------
+    // Order matters: shut peripherals down BEFORE we kill WiFi / I2C, and
+    // before we re-route GPIOs to the RTC subsystem.
+
+    // 1. SH8601 panel: DISPOFF then SLPIN. SLPIN powers down the panel
+    //    oscillator + boost — the biggest single mA win.
     display_sleep(true);
+    display_enter_low_power();
 
-    // Acknowledge any pending touch event so INT releases (returns high).
-    cst816_drain();
+    // 2. Backlight: stop LEDC and drive BL pin low.
+    display_backlight_off();
 
+    // 3. DRV2605 haptic into standby (REG_MODE bit 6).
+    haptic_standby();
+
+    // 4. CST816D into deep sleep — drops ~1.5 mA. We trade touch-wake for
+    //    this; encoder remains as the wake path.
+    cst816_drain();          // release any pending INT first
+    cst816_deep_sleep();
+
+    // ---- Network -------------------------------------------------------
     // Drop WiFi cleanly so the AP doesn't have to reap the association.
     if (!wifi_manager_is_ap_mode()) {
         esp_wifi_disconnect();
         esp_wifi_stop();
     }
 
+    // ---- Wake pins -----------------------------------------------------
     // Detach the encoder GPIO ISR — we're about to re-route those pins
     // to the RTC subsystem.
     gpio_isr_handler_remove(ENC_A_GPIO);
     gpio_isr_handler_remove(ENC_B_GPIO);
 
     const gpio_num_t wake_pins[] = {
-        (gpio_num_t)TOUCH_INT_GPIO,
         (gpio_num_t)ENC_A_GPIO,
         (gpio_num_t)ENC_B_GPIO,
     };
@@ -103,22 +128,18 @@ static void enter_deep_sleep(void) {
 
     // Read the actual GPIO levels via the RTC mux. ANY pin reading 0 right
     // now will trip the wake immediately, so we only include in the wake
-    // mask those pins that are currently HIGH. The user can still wake via
-    // whichever pins remain — encoder mechanical state can sometimes leave
-    // ENC_A or ENC_B closed (low), and we don't want that to make the
-    // device unsleepable.
-    int t_int = rtc_gpio_get_level((gpio_num_t)TOUCH_INT_GPIO);
-    int e_a   = rtc_gpio_get_level((gpio_num_t)ENC_A_GPIO);
-    int e_b   = rtc_gpio_get_level((gpio_num_t)ENC_B_GPIO);
-    ESP_LOGW(TAG, "pre-sleep pin levels: TP_INT=%d ENC_A=%d ENC_B=%d",
-             t_int, e_a, e_b);
+    // mask those pins that are currently HIGH. Encoder mechanical state
+    // can leave one switch closed; in that case we still wake on the
+    // other one.
+    int e_a = rtc_gpio_get_level((gpio_num_t)ENC_A_GPIO);
+    int e_b = rtc_gpio_get_level((gpio_num_t)ENC_B_GPIO);
+    ESP_LOGW(TAG, "pre-sleep pin levels: ENC_A=%d ENC_B=%d", e_a, e_b);
 
     uint64_t mask = 0;
-    if (t_int) mask |= (1ULL << TOUCH_INT_GPIO);
-    if (e_a)   mask |= (1ULL << ENC_A_GPIO);
-    if (e_b)   mask |= (1ULL << ENC_B_GPIO);
+    if (e_a) mask |= (1ULL << ENC_A_GPIO);
+    if (e_b) mask |= (1ULL << ENC_B_GPIO);
     if (mask == 0) {
-        ESP_LOGE(TAG, "all wake pins are low — cannot sleep, aborting");
+        ESP_LOGE(TAG, "both encoder pins low — cannot sleep, aborting");
         return;
     }
 
@@ -158,12 +179,19 @@ void power_tick(void) {
 
         case DISP_DIM:
             if (s_sleep_secs > 0 && idle_ms >= (int64_t)s_sleep_secs * 1000) {
-                display_set_backlight(0);
+                // Tier 2 entry: shut everything we can while keeping the
+                // CST816D alive (so a touch can still wake us instantly).
+                // SH8601 SLPIN, LEDC stopped, DRV2605 standby — same as
+                // deep sleep minus the touch-controller shutdown and minus
+                // the WiFi teardown.
                 display_sleep(true);
+                display_enter_low_power();
+                display_backlight_off();
+                haptic_standby();
                 if (!wifi_manager_is_ap_mode()) esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
                 s_state            = DISP_SLEEP;
                 s_entered_sleep_us = now;
-                ESP_LOGI(TAG, "panel sleep");
+                ESP_LOGI(TAG, "panel sleep (tier 2)");
             } else if (idle_ms < (int64_t)s_dim_secs * 1000) {
                 display_set_backlight(DEFAULT_BL_PCT);
                 s_state = DISP_AWAKE;
@@ -173,9 +201,12 @@ void power_tick(void) {
 
         case DISP_SLEEP:
             if (idle_ms < (int64_t)s_sleep_secs * 1000) {
-                // Activity → wake panel.
-                display_sleep(false);
+                // Activity → reverse the Tier-2 shutdown.
+                display_backlight_resume();   // re-init LEDC; duty 0
+                display_exit_low_power();     // SLPOUT + 120 ms wait
+                display_sleep(false);         // DISPON
                 display_set_backlight(DEFAULT_BL_PCT);
+                haptic_resume();
                 if (!wifi_manager_is_ap_mode()) esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
                 s_state = DISP_AWAKE;
                 ESP_LOGI(TAG, "wake from sleep");

@@ -16,7 +16,8 @@
 
 static const char *TAG = "display";
 
-static esp_lcd_panel_handle_t s_panel    = NULL;
+static esp_lcd_panel_handle_t    s_panel = NULL;
+static esp_lcd_panel_io_handle_t s_io    = NULL;   // kept for raw-command access (SLPIN before deep sleep)
 static lv_disp_drv_t          s_disp_drv;   // file-scope: ISR callback uses it after display_init returns
 
 // ---------------------------------------------------------------------------
@@ -182,6 +183,43 @@ void display_sleep(bool sleep) {
     esp_lcd_panel_disp_on_off(s_panel, !sleep);
 }
 
+// Send 0x10 SLPIN to put the SH8601 into its lowest-power state. The
+// stock disp_on_off only sends DISPOFF (0x28) which blanks output but
+// leaves the panel oscillator / boost converter running — costs several
+// mA. SLPIN is the proper "shut everything down" command. Caller must
+// allow ~5 ms for the panel to settle before cutting any rails.
+void display_enter_low_power(void) {
+    if (!s_io) return;
+    // QSPI command framing: 0x02 prefix + 8-bit cmd shifted into bits 16:8.
+    // We rely on the SH8601 driver's existing tx_param wiring — easiest is
+    // to call esp_lcd_panel_io_tx_param directly with the same 32-bit cmd
+    // shape used by the driver itself.
+    esp_lcd_panel_io_tx_param(s_io, (0x02 << 24) | (0x10 << 8), NULL, 0);
+}
+
+void display_exit_low_power(void) {
+    if (!s_io) return;
+    // SLPOUT (0x11). Datasheet: ≥120 ms before any subsequent draw.
+    esp_lcd_panel_io_tx_param(s_io, (0x02 << 24) | (0x11 << 8), NULL, 0);
+    vTaskDelay(pdMS_TO_TICKS(120));
+}
+
+void display_backlight_off(void) {
+    // Stop LEDC channel cleanly so the timer / driver isn't switching.
+    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    // Re-purpose BL pin as a plain GPIO held low — guarantees the LED
+    // driver IC sees a steady 0 instead of a high-impedance node.
+    gpio_reset_pin(LCD_BL_GPIO);
+    gpio_set_direction(LCD_BL_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(LCD_BL_GPIO, 0);
+}
+
+void display_backlight_resume(void) {
+    // Re-attach BL pin to LEDC and restart the timer / channel. After this,
+    // display_set_backlight() works normally again. Duty starts at 0.
+    backlight_init();
+}
+
 // ---------------------------------------------------------------------------
 // LVGL tick
 // ---------------------------------------------------------------------------
@@ -203,7 +241,6 @@ esp_err_t display_init(void) {
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_SPI_HOST, &bus, SPI_DMA_CH_AUTO));
 
     // Panel IO (QSPI 32-bit cmds, 4-line mode)
-    esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_io_spi_config_t io_cfg = {
         .cs_gpio_num          = LCD_CS_GPIO,
         .dc_gpio_num          = -1,
@@ -215,7 +252,7 @@ esp_err_t display_init(void) {
         .lcd_param_bits       = 8,
         .flags.quad_mode      = true,
     };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, &io_cfg, &io));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, &io_cfg, &s_io));
 
     // SH8601 vendor config — provide Waveshare's exact init sequence
     sh8601_vendor_config_t vendor_cfg = {
@@ -229,7 +266,7 @@ esp_err_t display_init(void) {
         .bits_per_pixel  = 16,
         .vendor_config   = &vendor_cfg,
     };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_sh8601(io, &panel_cfg, &s_panel));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_sh8601(s_io, &panel_cfg, &s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
     // NOTE: do NOT call esp_lcd_panel_disp_on_off here — the init sequence

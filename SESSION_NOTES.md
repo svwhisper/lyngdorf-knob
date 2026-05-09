@@ -42,7 +42,7 @@ Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (SH8601 QSPI 360×360 round LCD)
 |---|---|---|
 | **1 Active** | any touch / encoder event | full UI, WiFi `MIN_MODEM` |
 | **2 Idle** | no interaction for `sleep_secs` (120 s) | panel + backlight off, WiFi `MAX_MODEM`, Lyngdorf poll 5→30 s, metadata poll 3→60 s |
-| **3 Deep sleep** | in Tier 2 ≥ 5 min **AND** amp not playing ≥ 2 min | WiFi disconnected, chip ~10 µA, wakes on TP_INT (GPIO 9) / ENC_A (GPIO 8) / ENC_B (GPIO 7) low |
+| **3 Deep sleep** | in Tier 2 ≥ 5 min **AND** amp not playing ≥ 2 min | WiFi off, SH8601 SLPIN, DRV2605 standby, CST816D deep sleep, LEDC stopped + BL held low. Wakes on ENC_A (GPIO 8) / ENC_B (GPIO 7) low. (Touch wake removed so CST816D can fully sleep.) |
 
 Plus always-on light sleep via `esp_pm_configure` + `CONFIG_FREERTOS_USE_TICKLESS_IDLE` so the CPU clock-gates whenever tasks are blocked.
 
@@ -96,7 +96,12 @@ Encoder is now interrupt-driven (negedge on GPIO 7 + 8 with 5 ms per-pin debounc
 3. **PM-related wake sources persist into deep sleep.** Call `esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL)` *before* `esp_sleep_enable_ext1_wakeup()`, otherwise a leftover tickless-idle resume timer fires immediately and the chip wakes within ms (`wake_cause=4` = TIMER).
 4. **Encoder pins can rest at low.** When the user clicks the knob, the mechanical state can leave one switch closed. Always read the actual GPIO levels just before deep sleep and exclude any low pin from the wake mask — otherwise we'd never sleep. `power.c::enter_deep_sleep` does this.
 5. **CST816D may hold TP_INT low if there's an unread touch event.** Drain its data registers (read 7 bytes from reg 0x00) just before sleep to release INT.
-6. **USB-CDC takes ~700 ms to renumerate after deep-sleep wake.** Without an early `vTaskDelay`, the post-wake `wake_cause=...` log line is dropped by the monitor. Currently 300 ms — bump to 1500 ms if you want guaranteed log visibility during development.
+6. **Peripheral shutdown order before `esp_deep_sleep_start()`** matters for current draw:
+   1. `display_sleep(true)` → DISPOFF, then `display_enter_low_power()` → SLPIN (0x10). Without SLPIN the SH8601's internal regulator + boost stay on (~5–15 mA).
+   2. `display_backlight_off()` stops the LEDC peripheral and pins BL low so the backlight driver IC isn't being switched.
+   3. `haptic_standby()` puts DRV2605 into standby (~1.5 mA → few µA).
+   4. `cst816_deep_sleep()` writes 0x03 to reg 0xA5 (~1.5 mA → ~5 µA). Side effect: TP_INT no longer wakes the chip — encoder is the sole wake path.
+7. **USB-CDC takes ~700 ms to renumerate after deep-sleep wake.** Without an early `vTaskDelay`, the post-wake `wake_cause=...` log line is dropped by the monitor. Currently 300 ms — bump to 1500 ms if you want guaranteed log visibility during development.
 
 ## Browser-based installer (ESP Web Tools)
 
