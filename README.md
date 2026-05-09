@@ -4,7 +4,7 @@
   <img src="docs/images/lyngdorf_knob.jpeg" alt="LyngdorfKnob in action — round LCD showing volume, track info, and battery on a blue 3D-printed enclosure" width="420">
 </p>
 
-ESP-IDF firmware for the **[Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/esp32-s3-knob-touch-lcd-1.8.htm?sku=31623)** board, turning it into a physical volume / play-pause / mute controller for the **Lyngdorf TDAI-3400** amplifier.
+ESP-IDF firmware for the **[Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/esp32-s3-knob-touch-lcd-1.8.htm?sku=31623)** board, turning it into a physical volume / play-pause / mute controller for **Lyngdorf** amplifiers.
 
 | Interaction | Action |
 |---|---|
