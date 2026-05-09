@@ -56,7 +56,7 @@ When flashing completes the device reboots, shows a brief boot splash with a QR 
    |---|---|
    | **WiFi SSID** | Your home network name |
    | **WiFi Password** | Your home network password |
-   | **Amp IP** | The Lyngdorf TDAI-3400's IP address — set a DHCP reservation in your router so it doesn't change |
+   | **Amp IP** | The Lyngdorf's IP address — set a DHCP reservation in your router so it doesn't change |
    | **Vol Step** | Leave at `10` for 1.0 dB per click. Use `5` for 0.5 dB / `15` for 1.5 dB / etc. |
    | **Track-info refresh** | Leave at `3` (seconds) |
    | **Dim display after** | Seconds idle before display dims (default 30, `0` = never) |
