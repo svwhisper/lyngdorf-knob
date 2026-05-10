@@ -1,5 +1,5 @@
 # lyngdorf-knob session notes
-_Last updated: 2026-05-10 — USB-pin-reset panic fixed; deep sleep now stable past 7-min mark; overnight battery test in progress_
+_Last updated: 2026-05-10 — deep sleep now stable (USB-pin-reset + esp_sleep_pd_config bugs both fixed); battery test in progress_
 
 ## Device
 Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (SH8601 QSPI 360×360 round LCD)
@@ -103,6 +103,7 @@ Encoder is now interrupt-driven (negedge on GPIO 7 + 8 with 5 ms per-pin debounc
    4. `cst816_deep_sleep()` writes 0x03 to reg 0xA5 (~1.5 mA → ~5 µA). Side effect: TP_INT no longer wakes the chip — encoder is the sole wake path.
 7. **USB-CDC takes ~700 ms to renumerate after deep-sleep wake.** Without an early `vTaskDelay`, the post-wake `wake_cause=...` log line is dropped by the monitor. Currently 300 ms — bump to 1500 ms if you want guaranteed log visibility during development.
 8. **NEVER `gpio_reset_pin(19)` or `gpio_reset_pin(20)` while USB-CDC is the active system console.** Those are the native USB-DN/USB-DP pins. Resetting them yanks the pads out from under the active console driver and the chip panics on the next log call. Symptom we saw: deep-sleep entry log cuts off mid-line at "GPIO[19]| ... OpenD" exactly when USB CDC dies, then `boot_count` increments with `prev_reset=PANIC`. The USJ peripheral manages its own pad state across deep sleep; sub-mA savings aren't worth the crash. Layer-3 patch had these in the tri-state list — removed in commit after observing the panic loop (35 cycles in one battery session).
+9. **`esp_sleep_pd_config(domain, ESP_PD_OPTION_OFF)` is a refcount API — do not call OFF without a balancing prior ON.** ESP-IDF tracks per-domain reference counts; OFF decrements, ON increments. Calling OFF on a domain whose count is already 0 trips `assert(refs >= 0)` in `sleep_modes.c:1983` and panics. Was crashing intermittently — esp_pm's light-sleep config sometimes increments the count and masks the bug, so it looked like one cycle would succeed before the next panicked. In deep sleep the chip already powers down everything except RTC slow memory, RTC IO, and the configured wake source, so the OFF calls were redundant anyway. Removed in commit after backtrace pointed at `esp_sleep_pd_config` from power.c:194.
 
 ## Browser-based installer (ESP Web Tools)
 

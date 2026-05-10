@@ -186,13 +186,13 @@ static void enter_deep_sleep(void) {
     // wakes immediately on a stale TIMER wake.
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
-    // Force every optional power domain off that this SoC actually
-    // supports. RTC slow memory MUST stay ON so RTC_DATA_ATTR (wake
-    // counter / history) survives. RTC IO is implicitly required for
-    // ext1 wake. ESP32-S3 only allows RTC_PERIPH and CPU to be PD'd
-    // explicitly — the rest are managed by the chip.
-    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-    esp_sleep_pd_config(ESP_PD_DOMAIN_CPU,        ESP_PD_OPTION_OFF);
+    // NOTE: do NOT call esp_sleep_pd_config(..., ESP_PD_OPTION_OFF) here.
+    // It's a reference-counting API — OFF decrements a counter that other
+    // subsystems (esp_pm light-sleep, etc.) increment via ON. Calling OFF
+    // without a balancing prior ON drives the count negative and trips
+    // an assert in sleep_modes.c (`refs >= 0`). In deep sleep the chip
+    // already powers down everything except RTC slow memory, RTC IO, and
+    // the configured wake source — manual OFF calls add no value.
 
     esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW);
     ESP_LOGI(TAG, "wake mask = 0x%llx", (unsigned long long)mask);
