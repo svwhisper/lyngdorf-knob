@@ -1,4 +1,5 @@
 .flickrExclusion
+CLAUDE.local.md
 build/
 sdkconfig
 sdkconfig.old
