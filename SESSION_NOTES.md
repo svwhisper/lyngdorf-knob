@@ -181,7 +181,7 @@ Inter-task: `g_cmd_queue` (encoder/touch → net), shared `g_state` guarded by `
 
 ## Schematic reference
 
-From `~/Downloads/ESP32-S3-Knob-Touch-LCD-1.8-schematic/*.png` + the structured JSON walk in `~/Downloads/power_optimisation_schematic_context.json`.
+From the structured JSON walk at [`docs/schematic_context.json`](docs/schematic_context.json) (raster source images at `~/Downloads/ESP32-S3-Knob-Touch-LCD-1.8-schematic/*.png`, not committed).
 
 ### GPIO map (ESP32-S3 side)
 

@@ -1,0 +1,396 @@
+{
+  "document": {
+    "type": "schematic_context_for_software_power_optimisation",
+    "source_basis": "visual transcription from five schematic images",
+    "recommended_for_llm_use": true,
+    "why_not_kicad": "A KiCad netlist generated from raster images would imply false precision. For software power optimisation, this JSON preserves the useful control relationships, rails, GPIO mappings, and uncertainty flags without pretending to be an authoritative CAD export.",
+    "confidence_model": {
+      "high": "label and connection were visually clear",
+      "medium": "functional intent clear but exact pin detail should be checked",
+      "low": "visually ambiguous; verify before design decisions"
+    }
+  },
+  "rails": [
+    {
+      "net": "5V",
+      "role": "primary input/distribution rail",
+      "software_control": "none observed",
+      "feeds": [
+        "3V3 buck U19",
+        "3V3_DAC LDO U20",
+        "battery ADC divider R62/R63",
+        "CN1"
+      ],
+      "power_optimisation_relevance": [
+        "5V is sensed by BATT_ADC through a fixed 10K/10K divider.",
+        "No software-controlled high-side switch was observed on the 5V rail."
+      ],
+      "confidence": "high"
+    },
+    {
+      "net": "3V3",
+      "role": "main system 3.3 V rail from U19 TLV62569DBVT buck converter",
+      "software_control": "none observed; U19 EN appears tied high",
+      "feeds": [
+        "ESP32-S3 U2",
+        "ESP32-U4WDH U14",
+        "LCD/touch connector U5",
+        "PDM microphone MIC1",
+        "microSD CARD1",
+        "DRV2605L haptic driver U13",
+        "pull-ups and reset/boot networks"
+      ],
+      "power_optimisation_relevance": [
+        "Most peripherals remain electrically powered whenever 3V3 is present.",
+        "Software savings will mainly come from peripheral sleep/reset, bus deinit, clock gating, and MCU sleep modes rather than rail shutdown."
+      ],
+      "confidence": "medium",
+      "uncertainties": [
+        "Verify U19 EN connection if rail-level shutdown is important."
+      ]
+    },
+    {
+      "net": "3V3_DAC",
+      "role": "DAC-local 3.3 V rail from U20 SGM2036 LDO",
+      "software_control": "none observed; U20 EN tied to input node",
+      "feeds": [
+        "PCM5100A DAC U12 DVDD/AVDD via A3V3",
+        "I2S switch U18"
+      ],
+      "power_optimisation_relevance": [
+        "DAC rail appears always on when 5V is present.",
+        "Software can mute/stop I2S/XSMT but cannot fully remove DAC supply unless hardware is revised."
+      ],
+      "confidence": "high"
+    },
+    {
+      "net": "A3V3",
+      "role": "analog DAC 3.3 V rail tied to 3V3_DAC",
+      "software_control": "none observed",
+      "feeds": [
+        "PCM5100A U12 analog supply pins"
+      ],
+      "confidence": "high"
+    },
+    {
+      "net": "VDD_SPI",
+      "role": "ESP32-S3 external flash supply",
+      "software_control": "MCU/flash power-management modes only; no external switch observed",
+      "feeds": [
+        "W25Q128JVPIQ U3"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "software_controllable_signals": [
+    {
+      "net": "LCD_BLK",
+      "controller": "ESP32-S3 U2 GPIO47",
+      "controlled_hardware": "Q1 AO3400A low-side LCD backlight switch",
+      "active_state": "likely high turns backlight on via NMOS gate",
+      "power_saving_action": "drive inactive/low and/or avoid PWM when display is off",
+      "impact": "high",
+      "confidence": "high"
+    },
+    {
+      "net": "LCD_RST",
+      "controller": "ESP32-S3 U2 GPIO21",
+      "controlled_hardware": "LCD panel reset on U5",
+      "power_saving_action": "assert reset or use display sleep commands before deeper system sleep; verify panel behaviour",
+      "impact": "medium",
+      "confidence": "high"
+    },
+    {
+      "net": "TP_RST",
+      "controller": "ESP32-S3 U2 GPIO10",
+      "controlled_hardware": "touch controller reset on LCD/touch connector U5",
+      "power_saving_action": "assert reset or put touch controller into low-power mode if wake-on-touch is not needed",
+      "impact": "medium",
+      "confidence": "high"
+    },
+    {
+      "net": "I2S_SWITCH_IN",
+      "controller": "ESP32-S3 U2 GPIO0",
+      "controlled_hardware": "CH445P U18 I2S source selection",
+      "power_saving_action": "select inactive source deliberately; avoid floating/clocked inactive I2S paths",
+      "impact": "low_to_medium",
+      "confidence": "medium"
+    },
+    {
+      "net": "XSMT",
+      "controller": "ESP32-U4WDH U14 GPIO32",
+      "controlled_hardware": "PCM5100A U12 soft mute control",
+      "power_saving_action": "mute DAC before stopping I2S clocks; verify PCM5100A low-power behaviour",
+      "impact": "low_to_medium",
+      "confidence": "high"
+    },
+    {
+      "net": "CHIP_PU",
+      "controller": "pull-up plus boot/reset network",
+      "controlled_hardware": "ESP32-S3 enable",
+      "power_saving_action": "not normally available as software control from same MCU; relevant for external power sequencing only",
+      "impact": "high_if_external_control_exists",
+      "confidence": "high"
+    },
+    {
+      "net": "ESP32_EN",
+      "controller": "pull-up plus USB-UART RTS#",
+      "controlled_hardware": "ESP32-U4WDH enable",
+      "power_saving_action": "check whether ESP32-S3 can control secondary ESP32 enable; schematic only shows USB-UART involvement",
+      "impact": "high_if_software_controlled",
+      "confidence": "medium"
+    }
+  ],
+  "peripherals": [
+    {
+      "name": "LCD panel and backlight",
+      "supply": "3V3 plus LEDA tied to 3V3",
+      "control_nets": [
+        "LCD_BLK",
+        "LCD_RST",
+        "LCD_QSPI_*",
+        "LCD_TE"
+      ],
+      "software_actions": [
+        "Turn off backlight using GPIO47 LCD_BLK before display sleep.",
+        "Send LCD sleep/display-off commands over QSPI if supported by panel.",
+        "Disable or lower QSPI clock when idle.",
+        "Assert LCD_RST during long sleeps only if wake latency is acceptable."
+      ],
+      "expected_power_priority": "highest visible software lever due to backlight",
+      "confidence": "high"
+    },
+    {
+      "name": "Touch controller",
+      "supply": "3V3 through U5 assembly",
+      "control_nets": [
+        "TP_RST",
+        "TP_INT",
+        "TP_SDA",
+        "TP_SCL"
+      ],
+      "software_actions": [
+        "Use interrupt-driven touch rather than polling.",
+        "If wake-on-touch is not required, assert TP_RST or command low-power mode.",
+        "Keep I2C pull-ups in mind; shared TP_SDA/TP_SCL are also haptic I2C lines."
+      ],
+      "confidence": "high"
+    },
+    {
+      "name": "DRV2605L haptic driver",
+      "supply": "3V3",
+      "control_nets": [
+        "HAPTIC_SDA",
+        "HAPTIC_SCL",
+        "HAPTIC_TRIG",
+        "HAPTIC_EN"
+      ],
+      "software_actions": [
+        "Use DRV2605 standby/sleep register settings over I2C.",
+        "HAPTIC_EN appears tied to 3V3, so software may not be able to disable the IC via EN.",
+        "HAPTIC_TRIG appears tied to GND, so triggered-mode wake/use is probably not active."
+      ],
+      "expected_power_priority": "medium",
+      "confidence": "medium"
+    },
+    {
+      "name": "microSD card",
+      "supply": "3V3",
+      "control_nets": [
+        "SDMMC_D0",
+        "SDMMC_D1",
+        "SDMMC_D2",
+        "SDMMC_D3",
+        "SDMMC_CMD",
+        "SDMMC_SCK"
+      ],
+      "software_actions": [
+        "Unmount/deinitialise SDMMC when idle.",
+        "Gate or stop SDMMC clock in sleep.",
+        "Use 1-bit mode or lower frequency if acceptable.",
+        "No card power switch was observed, so card remains powered."
+      ],
+      "expected_power_priority": "medium_to_high depending on card",
+      "confidence": "high"
+    },
+    {
+      "name": "PDM microphone",
+      "supply": "3V3",
+      "control_nets": [
+        "PDM_MIC_SCK",
+        "PDM_MIC_DATA"
+      ],
+      "software_actions": [
+        "Stop PDM clock when not recording; many digital microphones enter low-power mode when clock is stopped.",
+        "Disable input peripheral/DMA while idle."
+      ],
+      "expected_power_priority": "medium",
+      "confidence": "high"
+    },
+    {
+      "name": "PCM5100A DAC and I2S audio path",
+      "supply": "3V3_DAC/A3V3",
+      "control_nets": [
+        "XSMT",
+        "I2S_DAC_BCK",
+        "I2S_DAC_DIN",
+        "I2S_DAC_LRCK/WS",
+        "I2S_SWITCH_IN"
+      ],
+      "software_actions": [
+        "Mute via XSMT before stopping audio stream.",
+        "Stop I2S BCK/LRCK when audio is idle.",
+        "Put source MCU audio peripheral into low-power state.",
+        "Hardware rail stays on; consider future revision adding load switch or controllable LDO EN for deeper savings."
+      ],
+      "expected_power_priority": "medium",
+      "confidence": "medium"
+    },
+    {
+      "name": "ESP32-U4WDH secondary MCU",
+      "supply": "3V3",
+      "control_nets": [
+        "ESP32_EN",
+        "ESP32_IO0",
+        "ESP32_UART0_RX",
+        "ESP32_UART0_TX",
+        "ESP32S3_RX",
+        "ESP32S3_TX"
+      ],
+      "software_actions": [
+        "Use deep sleep/light sleep on the secondary ESP32 when audio or bridge functions are idle.",
+        "Check whether ESP32-S3 can command secondary ESP32 sleep over UART.",
+        "If ESP32_EN can be externally controlled in hardware, disabling the secondary MCU would be a major saving."
+      ],
+      "expected_power_priority": "high if secondary MCU is usually idle",
+      "confidence": "medium"
+    },
+    {
+      "name": "Battery ADC divider",
+      "supply": "5V to GND through R62/R63",
+      "control_nets": [
+        "BATT_ADC"
+      ],
+      "software_actions": [
+        "Divider is fixed 20K total, continuously drawing from 5V.",
+        "Software can reduce ADC sampling but cannot remove divider current.",
+        "For future hardware, switch the divider high side or use larger values if ADC accuracy permits."
+      ],
+      "expected_power_priority": "low_absolute_current but always-on",
+      "confidence": "high"
+    }
+  ],
+  "gpio_map_for_power_firmware": {
+    "ESP32-S3": {
+      "GPIO47": "LCD_BLK",
+      "GPIO21": "LCD_RST",
+      "GPIO10": "TP_RST",
+      "GPIO9": "TP_INT",
+      "GPIO11": "TP_SDA",
+      "GPIO12": "TP_SCL",
+      "GPIO13": "LCD_QSPI_SCL",
+      "GPIO14": "LCD_QSPI_CS",
+      "GPIO15": "LCD_QSPI_D0",
+      "GPIO16": "LCD_QSPI_D1",
+      "GPIO17": "LCD_QSPI_D2",
+      "GPIO18": "LCD_QSPI_D3",
+      "GPIO45": "PDM_MIC_SCK",
+      "GPIO46": "PDM_MIC_DATA",
+      "GPIO5": "SDMMC_D0",
+      "GPIO6": "SDMMC_D1",
+      "GPIO42": "SDMMC_D2",
+      "GPIO2": "SDMMC_D3",
+      "GPIO3": "SDMMC_CMD",
+      "GPIO4": "SDMMC_SCK",
+      "GPIO1": "BATT_ADC",
+      "GPIO0": "I2S_SWITCH_IN",
+      "GPIO39": "S3_I2S_DAC_BCK",
+      "GPIO40": "S3_I2S_DAC_LRCK/WS",
+      "GPIO41": "S3_I2S_DAC_DIN",
+      "GPIO19": "USB_DN",
+      "GPIO20": "USB_DP"
+    },
+    "ESP32-U4WDH": {
+      "GPIO32": "XSMT",
+      "GPIO25": "ESP32_I2S_DAC_BCK",
+      "GPIO26": "ESP32_I2S_DAC_DIN",
+      "GPIO27": "ESP32_I2S_DAC_LRCK/WS",
+      "GPIO21": "EC2_A",
+      "GPIO22": "EC2_B",
+      "GPIO23": "ESP32S3_RX",
+      "GPIO18": "ESP32S3_TX"
+    }
+  },
+  "recommended_power_optimisation_order": [
+    {
+      "rank": 1,
+      "target": "LCD backlight and panel",
+      "why": "Backlight is explicitly GPIO-controlled and likely dominates interactive consumption.",
+      "software_levers": [
+        "LCD_BLK",
+        "LCD sleep command",
+        "LCD_RST where appropriate"
+      ]
+    },
+    {
+      "rank": 2,
+      "target": "Secondary ESP32-U4WDH",
+      "why": "A second MCU can dominate idle current if left active.",
+      "software_levers": [
+        "firmware sleep over UART/protocol",
+        "ESP32_EN only if controllable"
+      ]
+    },
+    {
+      "rank": 3,
+      "target": "microSD",
+      "why": "Cards vary widely and can draw significant idle current if not put to sleep.",
+      "software_levers": [
+        "unmount/deinit",
+        "stop SDMMC clock",
+        "card sleep commands if available"
+      ]
+    },
+    {
+      "rank": 4,
+      "target": "PDM microphone",
+      "why": "Clocked digital microphone can be reduced by stopping clock/peripheral.",
+      "software_levers": [
+        "disable PDM/I2S peripheral",
+        "stop PDM clock"
+      ]
+    },
+    {
+      "rank": 5,
+      "target": "DAC/audio path",
+      "why": "Rail appears always-on, but mute and clock stop reduce dynamic power and audio artefacts.",
+      "software_levers": [
+        "XSMT mute",
+        "stop I2S clocks",
+        "select inactive path with I2S_SWITCH_IN"
+      ]
+    },
+    {
+      "rank": 6,
+      "target": "Haptic driver",
+      "why": "EN appears tied high, so use register standby rather than GPIO shutdown.",
+      "software_levers": [
+        "DRV2605 standby/sleep over I2C"
+      ]
+    }
+  ],
+  "hardware_limitations_for_software_power": [
+    "No observed software-controlled switch for main 3V3 rail.",
+    "No observed software-controlled switch for 3V3_DAC; U20 EN appears tied to input.",
+    "DRV2605 HAPTIC_EN appears tied to 3V3 rather than a GPIO.",
+    "Battery ADC divider is always connected across 5V/GND.",
+    "microSD, microphone, LCD logic, and haptic driver appear continuously powered from 3V3."
+  ],
+  "verification_needed": [
+    "Confirm U19 EN, U20 EN, and HAPTIC_EN in the CAD netlist.",
+    "Confirm CH445P U18 I2S switch truth table and exact BCK/DIN/LRCK channel mapping.",
+    "Confirm whether ESP32-S3 firmware has any route to control ESP32-U4WDH enable or only command it over UART.",
+    "Identify exact LCD panel and touch controller ICs for vendor-specific sleep commands.",
+    "Measure current before/after each software lever with 5V input current logging."
+  ]
+}
