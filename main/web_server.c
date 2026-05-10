@@ -80,23 +80,30 @@ static const char *HTML_FOOT =
 // ---------------------------------------------------------------------------
 static esp_err_t get_handler(httpd_req_t *req) {
     char ssid[64]={0}, pass[64]={0}, amp_ip[64]={0};
-    uint32_t vol_step    = DEFAULT_VOL_STEP;
-    uint32_t dim_secs    = DEFAULT_DIM_SECS;
-    uint32_t sleep_secs  = DEFAULT_SLEEP_SECS;
-    uint32_t meta_poll_s = DEFAULT_META_POLL_S;
+    uint32_t vol_step       = DEFAULT_VOL_STEP;
+    uint32_t dim_secs       = DEFAULT_DIM_SECS;
+    uint32_t sleep_secs     = DEFAULT_SLEEP_SECS;
+    uint32_t deep_after_s   = DEFAULT_DEEP_AFTER_S;
+    uint32_t paused_grace_s = DEFAULT_PAUSED_GRACE_S;
+    uint32_t meta_poll_s    = DEFAULT_META_POLL_S;
 
     config_get_str(NVS_WIFI_SSID, ssid,   sizeof(ssid));
     config_get_str(NVS_WIFI_PASS, pass,   sizeof(pass));
     config_get_str(NVS_AMP_IP,    amp_ip, sizeof(amp_ip));
-    config_get_u32(NVS_VOL_STEP,    &vol_step,    DEFAULT_VOL_STEP);
-    config_get_u32(NVS_DIM_SECS,    &dim_secs,    DEFAULT_DIM_SECS);
-    config_get_u32(NVS_SLEEP_SECS,  &sleep_secs,  DEFAULT_SLEEP_SECS);
-    config_get_u32(NVS_META_POLL_S, &meta_poll_s, DEFAULT_META_POLL_S);
+    config_get_u32(NVS_VOL_STEP,       &vol_step,       DEFAULT_VOL_STEP);
+    config_get_u32(NVS_DIM_SECS,       &dim_secs,       DEFAULT_DIM_SECS);
+    config_get_u32(NVS_SLEEP_SECS,     &sleep_secs,     DEFAULT_SLEEP_SECS);
+    config_get_u32(NVS_DEEP_AFTER_S,   &deep_after_s,   DEFAULT_DEEP_AFTER_S);
+    config_get_u32(NVS_PAUSED_GRACE_S, &paused_grace_s, DEFAULT_PAUSED_GRACE_S);
+    config_get_u32(NVS_META_POLL_S,    &meta_poll_s,    DEFAULT_META_POLL_S);
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, HTML_HEAD);
 
-    char buf[1024];
+    // BSS-resident — handler is serialised by the httpd task, so reuse is safe.
+    // Stack-resident copies overflowed the 4 KB httpd task stack once buf2 grew
+    // to fit the deep-sleep config fields.
+    static char buf[1024];
     snprintf(buf, sizeof(buf),
         "<label>WiFi SSID<input name='ssid' value='%s'></label>"
         "<label>WiFi Password<input name='pass' type='password' value='%s'></label>"
@@ -108,13 +115,23 @@ static esp_err_t get_handler(httpd_req_t *req) {
         ssid, pass, amp_ip, (unsigned long)vol_step, (unsigned long)meta_poll_s);
     httpd_resp_sendstr_chunk(req, buf);
 
-    char buf2[256];
+    static char buf2[1280];
     snprintf(buf2, sizeof(buf2),
         "<label>Dim display after (seconds, 0=off)"
         "<input name='dim_secs' type='number' min='0' max='3600' value='%lu'></label>"
         "<label>Sleep display after (seconds, 0=off)"
-        "<input name='sleep_secs' type='number' min='0' max='3600' value='%lu'></label>",
-        (unsigned long)dim_secs, (unsigned long)sleep_secs);
+        "<input name='sleep_secs' type='number' min='0' max='3600' value='%lu'></label>"
+        "<label>Deep sleep after (extra seconds idle, 0=disable deep sleep)"
+        "<input name='deep_after_s' type='number' min='0' max='3600' value='%lu'>"
+        "<small>Lower = more battery saved when unused; higher = no ~3 s WiFi reconnect "
+        "delay on next interaction. Breakeven vs. idle is ~25 s of extra sleep per wake.</small>"
+        "</label>"
+        "<label>Paused grace (seconds amp must be not playing before deep sleep, 0=ignore amp)"
+        "<input name='paused_grace_s' type='number' min='0' max='3600' value='%lu'>"
+        "<small>Keeps the knob responsive while music is playing.</small>"
+        "</label>",
+        (unsigned long)dim_secs, (unsigned long)sleep_secs,
+        (unsigned long)deep_after_s, (unsigned long)paused_grace_s);
     httpd_resp_sendstr_chunk(req, buf2);
 
     httpd_resp_sendstr_chunk(req, HTML_FOOT);
@@ -133,21 +150,26 @@ static esp_err_t post_handler(httpd_req_t *req) {
 
     char ssid[64]={0}, pass[64]={0}, amp_ip[64]={0};
     char vol_s[8]={0}, dim_s[8]={0}, sleep_s[8]={0}, meta_s[8]={0};
-    get_field(body, "ssid",        ssid,    sizeof(ssid));
-    get_field(body, "pass",        pass,    sizeof(pass));
-    get_field(body, "amp_ip",      amp_ip,  sizeof(amp_ip));
-    get_field(body, "vol_step",    vol_s,   sizeof(vol_s));
-    get_field(body, "dim_secs",    dim_s,   sizeof(dim_s));
-    get_field(body, "sleep_secs",  sleep_s, sizeof(sleep_s));
-    get_field(body, "meta_poll_s", meta_s,  sizeof(meta_s));
+    char deep_s[8]={0}, grace_s[8]={0};
+    get_field(body, "ssid",           ssid,    sizeof(ssid));
+    get_field(body, "pass",           pass,    sizeof(pass));
+    get_field(body, "amp_ip",         amp_ip,  sizeof(amp_ip));
+    get_field(body, "vol_step",       vol_s,   sizeof(vol_s));
+    get_field(body, "dim_secs",       dim_s,   sizeof(dim_s));
+    get_field(body, "sleep_secs",     sleep_s, sizeof(sleep_s));
+    get_field(body, "deep_after_s",   deep_s,  sizeof(deep_s));
+    get_field(body, "paused_grace_s", grace_s, sizeof(grace_s));
+    get_field(body, "meta_poll_s",    meta_s,  sizeof(meta_s));
 
     if (ssid[0])    config_set_str(NVS_WIFI_SSID, ssid);
     if (pass[0])    config_set_str(NVS_WIFI_PASS, pass);
     if (amp_ip[0])  config_set_str(NVS_AMP_IP,   amp_ip);
-    if (vol_s[0])   config_set_u32(NVS_VOL_STEP,    (uint32_t)atoi(vol_s));
-    if (dim_s[0])   config_set_u32(NVS_DIM_SECS,    (uint32_t)atoi(dim_s));
-    if (sleep_s[0]) config_set_u32(NVS_SLEEP_SECS,  (uint32_t)atoi(sleep_s));
-    if (meta_s[0])  config_set_u32(NVS_META_POLL_S, (uint32_t)atoi(meta_s));
+    if (vol_s[0])   config_set_u32(NVS_VOL_STEP,       (uint32_t)atoi(vol_s));
+    if (dim_s[0])   config_set_u32(NVS_DIM_SECS,       (uint32_t)atoi(dim_s));
+    if (sleep_s[0]) config_set_u32(NVS_SLEEP_SECS,     (uint32_t)atoi(sleep_s));
+    if (deep_s[0])  config_set_u32(NVS_DEEP_AFTER_S,   (uint32_t)atoi(deep_s));
+    if (grace_s[0]) config_set_u32(NVS_PAUSED_GRACE_S, (uint32_t)atoi(grace_s));
+    if (meta_s[0])  config_set_u32(NVS_META_POLL_S,    (uint32_t)atoi(meta_s));
 
     ESP_LOGI(TAG, "config saved — rebooting");
 

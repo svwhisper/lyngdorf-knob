@@ -29,15 +29,19 @@ static int64_t          s_entered_sleep_us = 0;
 static int64_t          s_last_playing_us  = 0;
 static uint32_t         s_dim_secs        = DEFAULT_DIM_SECS;
 static uint32_t         s_sleep_secs      = DEFAULT_SLEEP_SECS;
+static uint32_t         s_deep_after_s    = DEFAULT_DEEP_AFTER_S;
+static uint32_t         s_paused_grace_s  = DEFAULT_PAUSED_GRACE_S;
 
 esp_err_t power_init(void) {
     s_last_act_us     = esp_timer_get_time();
     s_last_playing_us = s_last_act_us;
-    config_get_u32(NVS_DIM_SECS,   &s_dim_secs,   DEFAULT_DIM_SECS);
-    config_get_u32(NVS_SLEEP_SECS, &s_sleep_secs, DEFAULT_SLEEP_SECS);
-    ESP_LOGI(TAG, "dim=%lus sleep=%lus deep_after=%ds paused_grace=%ds",
+    config_get_u32(NVS_DIM_SECS,       &s_dim_secs,       DEFAULT_DIM_SECS);
+    config_get_u32(NVS_SLEEP_SECS,     &s_sleep_secs,     DEFAULT_SLEEP_SECS);
+    config_get_u32(NVS_DEEP_AFTER_S,   &s_deep_after_s,   DEFAULT_DEEP_AFTER_S);
+    config_get_u32(NVS_PAUSED_GRACE_S, &s_paused_grace_s, DEFAULT_PAUSED_GRACE_S);
+    ESP_LOGI(TAG, "dim=%lus sleep=%lus deep_after=%lus paused_grace=%lus",
              (unsigned long)s_dim_secs, (unsigned long)s_sleep_secs,
-             DEEP_SLEEP_AFTER_S, PAUSED_GRACE_S);
+             (unsigned long)s_deep_after_s, (unsigned long)s_paused_grace_s);
     return ESP_OK;
 }
 
@@ -267,9 +271,11 @@ void power_tick(void) {
             // not been playing for the grace window AND not in AP/config mode.
             int64_t in_sleep_ms  = (now - s_entered_sleep_us) / 1000;
             int64_t paused_ms    = (now - s_last_playing_us)  / 1000;
+            // s_deep_after_s == 0 disables deep sleep entirely.
             if (!wifi_manager_is_ap_mode() &&
-                in_sleep_ms >= (int64_t)DEEP_SLEEP_AFTER_S * 1000 &&
-                paused_ms   >= (int64_t)PAUSED_GRACE_S    * 1000) {
+                s_deep_after_s > 0 &&
+                in_sleep_ms >= (int64_t)s_deep_after_s   * 1000 &&
+                paused_ms   >= (int64_t)s_paused_grace_s * 1000) {
                 enter_deep_sleep();   // does not return
             }
             break;

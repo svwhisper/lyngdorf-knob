@@ -16,39 +16,64 @@ Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50
 
 ---
 
-## Install — no build environment needed
+## Install
 
-The firmware is published as a pre-built binary you can flash directly from your browser. **Works on Windows, macOS, and Linux** — the ESP32-S3 has a native USB controller, so no drivers are required on any platform.
+> **Heads-up: this is a two-chip board.** The Waveshare hardware contains *two* independent MCUs sharing one USB-C port. Both need firmware:
+> 1. The **ESP32-S3** runs this project's firmware — the actual knob behaviour.
+> 2. The **secondary ESP32-U4WDH** ships running Waveshare's stock audio firmware, which draws **~50 mA continuously** even when idle. This project doesn't use the secondary chip at all, so we replace its firmware with a tiny "do-nothing, sleep forever" image — that's the difference between **days and weeks** of standby battery life.
+>
+> The same USB-C port talks to both chips; **the cable's orientation is the selector** (there are no buttons or jumpers — see [Step 2](#step-2-flash-the-secondary-esp32-cable-flipped)).
 
-> ⚠️ **For battery use, also see [this board has *two* MCUs](#important-this-board-has-two-mcus) below.** The hardware contains a secondary ESP32 that ships running an always-awake stock firmware drawing ~50 mA. If you only flash this project's firmware, idle battery life will be much shorter than it should be. The fix is a one-time flash of a tiny "deep-sleep forever" image to the secondary chip via the same USB-C port (cable flipped 180°).
+The whole install is three steps and takes about 5 minutes.
 
-### 1. Open the installer page
+### Step 1: Flash the main firmware (ESP32-S3)
 
-> 👉 **<https://svwhisper.github.io/lyngdorf-knob/>**
+Easiest path is browser-based with no tools to install. Works on Windows / macOS / Linux.
 
-You need a **Chromium-based browser**: Chrome, Edge, Brave, Opera, or Vivaldi. Safari and Firefox don't (yet) support the WebSerial API the installer uses.
+1. **Open the installer page in a Chromium-based browser** (Chrome, Edge, Brave, Opera, or Vivaldi — Safari and Firefox don't yet support WebSerial):
+   > 👉 **<https://svwhisper.github.io/lyngdorf-knob/>**
 
-| If you're on… | Use |
-|---|---|
-| **Windows** | Edge (preinstalled) or Chrome |
-| **macOS** | Chrome, Edge, or Brave (Safari users — install Chrome/Edge for this one step) |
-| **Linux** | Chrome, Chromium, Edge, or Brave |
+2. **Plug the device in via USB-C.** No driver install is needed — the ESP32-S3 has native USB. If any serial monitor / IDE is already holding the port, close it first.
 
-### 2. Plug the device in
+3. **Click *Install lyngdorf-knob*.** The browser opens a serial-port picker — pick the device (it'll be labelled something like `USB JTAG/serial debug unit (COM5)` on Windows, `/dev/cu.usbmodem…` on macOS). Flashing takes ~30 seconds.
 
-Connect the Waveshare board to your computer via USB-C. Both Windows 10/11 and macOS recognise it instantly with no driver install.
+When it's done the device reboots into AP mode waiting for WiFi credentials. **Don't configure it yet — do Step 2 first.**
 
-> ℹ️ If a serial monitor / IDE on your computer (Arduino IDE, ESP-IDF `idf.py monitor`, PuTTY, etc.) is open on the device's port, **close it first** — only one program can hold the port at a time.
+### Step 2: Flash the secondary ESP32 (cable flipped)
 
-### 3. Click *Install*
+This silences the always-awake chip. Skip it and idle battery life will be very poor.
 
-On the installer page, click the **Install lyngdorf-knob** button. A serial-port picker opens — choose the device (it'll be labelled something like `USB JTAG/serial debug unit (COM5)` on Windows, `/dev/cu.usbmodem…` on macOS).
+1. **Flip the USB-C cable 180°** in either the device or computer end. The S3 disappears and the secondary chip appears in its place:
 
-Flashing takes about 30 seconds. The browser shows progress; the device displays nothing during this phase.
+   | Cable orientation | Talks to | Enumerates as |
+   |---|---|---|
+   | A (the one used in Step 1) | ESP32-S3 | `/dev/cu.usbmodem*` (native USB-CDC) |
+   | **B (flipped)** | **Secondary ESP32** | `/dev/cu.usbserial-*` (USB-UART bridge) |
 
-### 4. First-boot WiFi setup
+2. **Flash the "sleep forever" firmware** to the secondary. Source is at [svwhisper/lyngdorf-secondary-sleep](https://github.com/svwhisper/lyngdorf-secondary-sleep) — it's a ~10-line ESP-IDF app whose only job is to call `esp_deep_sleep_start()` so the chip parks at ~10 µA.
 
-When flashing completes the device reboots, shows a brief boot splash with a QR code, and then comes up needing WiFi credentials.
+   If you have ESP-IDF installed:
+   ```bash
+   git clone https://github.com/svwhisper/lyngdorf-secondary-sleep.git
+   cd lyngdorf-secondary-sleep
+   idf.py set-target esp32 build flash -p /dev/cu.usbserial-*
+   ```
+
+   If you don't have ESP-IDF and don't want to install it, the merged binary is attached to each GitHub Release on that repo — download `secondary_sleep-merged.bin` and flash with esptool:
+   ```bash
+   pip install esptool   # one-time
+   esptool.py --chip esp32 -p /dev/cu.usbserial-* write_flash 0x0 secondary_sleep-merged.bin
+   ```
+
+3. **Flip the cable back to its original orientation** so subsequent flashing and serial monitoring of the S3 work normally.
+
+That's it. The secondary chip is now in ~10 µA deep sleep until the next time it's reflashed. Fully reversible — pull Waveshare's stock binary from their wiki and reflash it with the cable flipped if you ever want the audio path back.
+
+> **If a flash attempt ever reports `This chip is ESP32, not ESP32-S3`, your cable is in orientation B.** Flip it for S3 work, leave it for secondary work.
+
+### Step 3: First-boot WiFi setup
+
+With the cable back in the original orientation (or unplugged and on battery — either works), the knob is now in **AP mode** waiting for WiFi credentials.
 
 1. With your phone or laptop, look for a WiFi network called **`LyngdorfKnob`** and connect to it (it's open, no password).
 2. Open a browser and visit **<http://192.168.4.1>**.
@@ -63,97 +88,38 @@ When flashing completes the device reboots, shows a brief boot splash with a QR 
    | **Track-info refresh** | Leave at `3` (seconds) |
    | **Dim display after** | Seconds idle before display dims (default 30, `0` = never) |
    | **Sleep display after** | Seconds idle before display fully sleeps (default 120, `0` = never) |
+   | **Deep sleep after** | Extra seconds in display-sleep before the chip enters deep sleep (default 60, `0` = never deep-sleep). Lower = more battery saved; higher = no ~3 s WiFi reconnect delay on next use. |
+   | **Paused grace** | Seconds the amp must be not-playing before deep sleep is allowed (default 60, `0` = ignore amp). Keeps the knob responsive while music is playing. |
 
 4. Click **Save**. The device reboots, joins your home WiFi, connects to the amp, and is ready to use.
 
-After this, the same config form is available at `http://<device's-IP>/` whenever you're on the same network — for changing settings or the amp's IP.
+The same config form is available at `http://<device's-IP>/` whenever you're on the same network — for changing settings or the amp's IP later.
 
 ### Troubleshooting
 
 | Symptom | Try |
 |---|---|
 | Browser says "this site requires WebSerial" | You're on Safari / Firefox. Switch to Chrome / Edge / Brave for the install step only. |
-| Device not in the serial-port picker | Close any other program holding the port (Arduino IDE, terminal monitor); unplug + replug the USB cable; try a different USB port. |
-| "Failed to connect" / "MD5 mismatch" mid-flash | Use a USB cable that supports data (cheap charging-only cables are common); try a directly-connected USB port instead of a hub. |
-| Display stays blank after flashing | The device might be in AP mode waiting for WiFi config — look for the `LyngdorfKnob` WiFi network. |
-| Can't find `LyngdorfKnob` WiFi | Power-cycle the device. The AP appears within 5 seconds of boot if no WiFi is configured. |
+| Device not in the serial-port picker | Close any other program holding the port; unplug + replug the USB cable; try a different USB port. |
+| "Failed to connect" / "MD5 mismatch" mid-flash | Use a USB cable that supports data (charging-only cables are common); avoid USB hubs. |
+| `This chip is ESP32, not ESP32-S3` during S3 flash | Your USB-C cable is in orientation B (secondary chip). Flip it 180° and retry. |
+| Can't find `LyngdorfKnob` WiFi after install | Power-cycle the device. AP appears within 5 s of boot if no WiFi is configured. |
+| Display stays blank after flashing | The device might be in AP mode waiting for config — look for the `LyngdorfKnob` WiFi network. |
+| Manual S3 flash via esptool | Pre-built binary is at <https://github.com/svwhisper/lyngdorf-knob/releases/latest/download/lyngdorf-knob-merged.bin>. Flash with `esptool.py --chip esp32s3 -p <port> write_flash 0x0 lyngdorf-knob-merged.bin`. |
 
 ### Viewing logs over the network
 
-The device keeps an in-memory ring buffer of its recent log output (~8 KB, roughly the last 100–150 lines) and exposes it over HTTP at:
-
-> **`http://<device-ip>/log`**
-
-This is useful when the device is on battery — there's no USB-CDC monitor to attach, but you can still see what it's doing.
-
-Open it in a browser (refresh for updates), or from a terminal:
+The device keeps an in-memory ring buffer of its recent log output (~8 KB) and exposes it over HTTP at `http://<device-ip>/log`. Useful when the device is on battery and you have no serial monitor.
 
 ```bash
 # Show current log buffer once
-curl -s http://192.168.3.214/log
+curl -s http://<device-ip>/log
 
 # Live tail — refresh every 2 seconds, last 30 lines
-while true; do clear; curl -s http://192.168.3.214/log | tail -30; sleep 2; done
+while true; do clear; curl -s http://<device-ip>/log | tail -30; sleep 2; done
 ```
 
-The same log output goes to USB-CDC when a cable is connected, so you don't lose anything by using one or the other.
-
-### Manual flash (advanced fallback)
-
-If you can't or won't use a Chromium browser, you can flash from the command line:
-
-```bash
-# Install esptool (one-time)
-pip install esptool
-
-# Download the merged firmware from the latest release
-curl -LO https://github.com/svwhisper/lyngdorf-knob/releases/latest/download/lyngdorf-knob-merged.bin
-
-# Flash it (replace the port for your OS)
-#   macOS / Linux:  /dev/cu.usbmodem* or /dev/ttyUSB0
-#   Windows:        COM5  (check Device Manager for the actual port)
-esptool.py --chip esp32s3 -p /dev/cu.usbmodem* write_flash 0x0 lyngdorf-knob-merged.bin
-```
-
-After flashing, the same first-boot WiFi setup applies.
-
----
-
-## Important: this board has *two* MCUs
-
-The Waveshare ESP32-S3-Knob-Touch-LCD-1.8 contains **two independent chips**: the ESP32-S3 (which runs this firmware) and a secondary ESP32 (the "ESP32-U4WDH") that ships running Waveshare's stock Bluetooth/WiFi audio firmware. The secondary chip is wired to the audio DAC and a second encoder, neither of which this project uses — but it stays awake whenever the board has power, drawing **~50 mA continuously**. On a small Li-Po cell that's the difference between days and weeks of idle battery life.
-
-There's no GPIO from the S3 to the secondary's enable pin, so the only way to silence it is to reflash it with a do-nothing image.
-
-### The USB-C cable orientation selects which chip you flash
-
-Waveshare routed the single USB-C port to *both* MCUs using the connector's two mirror-image pin sets:
-
-| Cable orientation | Connects to | Enumerates as |
-|---|---|---|
-| **A** (default — try this first) | ESP32-S3 | `/dev/cu.usbmodem*` (macOS / Linux) — native USB-CDC, no driver |
-| **B** (flip 180°) | Secondary ESP32 | `/dev/cu.usbserial-*` — via on-board USB-UART bridge |
-
-There are no buttons or jumpers. The cable is the only selector. If a flash attempt reports `This chip is ESP32, not ESP32-S3`, you're in orientation B — flip the cable.
-
-### Flashing the secondary into deep sleep
-
-The companion project [`lyngdorf-secondary-sleep`](https://github.com/svwhisper/lyngdorf-secondary-sleep) is a ~10-line ESP-IDF app whose only job is to call `esp_deep_sleep_start()` with no wake sources, putting the secondary into ~10 µA permanent sleep. **Flash this once after first install** to get the full battery-life benefit.
-
-```bash
-git clone https://github.com/svwhisper/lyngdorf-secondary-sleep.git
-cd lyngdorf-secondary-sleep
-idf.py set-target esp32 build
-
-# Flip the USB-C cable 180° now
-ls /dev/cu.usbserial-*    # confirm — should show one entry
-
-idf.py -p /dev/cu.usbserial-* flash
-
-# Flip the cable back to its original orientation for normal S3 use
-```
-
-This is reversible: re-flash Waveshare's stock binary at any time using the same flip-and-flash procedure if you want the audio path back. (Stock binary is not bundled here — pull from Waveshare's wiki if needed.)
+The same log goes to USB-CDC when a cable is connected, so you don't lose anything by using one or the other.
 
 ---
 

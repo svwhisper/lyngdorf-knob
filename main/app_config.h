@@ -48,6 +48,8 @@
 #define NVS_VOL_STEP        "vol_step"
 #define NVS_DIM_SECS        "dim_secs"
 #define NVS_SLEEP_SECS      "sleep_secs"
+#define NVS_DEEP_AFTER_S    "deep_after_s"  // seconds in panel-sleep before deep sleep
+#define NVS_PAUSED_GRACE_S  "paused_grace"  // seconds amp must be not-playing before deep sleep
 #define NVS_META_POLL_S     "meta_poll_s"   // metadata poll interval, seconds
 
 // ---------------------------------------------------------------------------
@@ -62,8 +64,11 @@
 #define DEFAULT_DIM_PCT     20      // dimmed backlight %
 #define DEFAULT_DIM_SECS    30      // seconds idle before dimming (0 = disabled)
 #define DEFAULT_SLEEP_SECS  120     // seconds idle before panel-sleep (0 = disabled)
-#define DEEP_SLEEP_AFTER_S  300     // additional seconds in panel-sleep before deep sleep
-#define PAUSED_GRACE_S      120     // amp must have been not-playing this long before deep sleep
+// Defaults for runtime-configurable deep-sleep gating. See web config UI for tuning guidance.
+// Wake-from-deep-sleep + WiFi reassoc costs ~0.2 mAh; sleeping vs idling saves ~0.5 mAh/min;
+// breakeven is ~25 s, so 60 s gives a good energy/UX balance.
+#define DEFAULT_DEEP_AFTER_S    60  // seconds in panel-sleep before deep sleep (0 = disabled)
+#define DEFAULT_PAUSED_GRACE_S  60  // amp must be not-playing this long before deep sleep (0 = always allow)
 #define DEFAULT_META_POLL_S 3       // poll amp's HTTP metadata API every N s
 #define METADATA_HTTP_PORT  8080    // amp's JSON HTTP API port
 
