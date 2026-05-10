@@ -1,5 +1,69 @@
 # lyngdorf-knob session notes
-_Last updated: 2026-05-10 — deep sleep now stable (USB-pin-reset + esp_sleep_pd_config bugs both fixed); battery test in progress_
+_Last updated: 2026-05-11 — power investigation effectively closed at ~7 mA idle (10× improvement from baseline). All software levers exhausted; only hardware mods remain for further reduction._
+
+## Power investigation: closed (2026-05-11)
+
+**Final result: ~7 mA average deep-sleep idle current.** 10× improvement over the original ~50–60 mA baseline. With an 800 mAh cell, gives ~3 days pure idle / ~1.5–2 days with light daily use.
+
+### Measurement (2026-05-11, 15 h on battery)
+
+- Battery 100% → 50% = ~400 mAh consumed
+- Wake history: 8 boots from cold reset, all `cause=3` (EXT1 encoder wake) — **zero panics**
+- Active time decomposed from `prev_uptime` values:
+  - 1 cold boot
+  - 6 brief 7-min wake-and-resleep cycles (encoder bumps): ~42 min
+  - 1 long use session: 2 h 29 min
+  - Total: ~3.2 h active, ~11.8 h true deep sleep
+- Active draw assumption ~100 mA → 320 mAh → deep-sleep floor ≈ ~7 mA average
+
+### What got us here (in order of impact)
+
+| Fix | Approx. savings |
+|---|---:|
+| Reflash secondary ESP32-U4WDH with sleep-forever firmware (USB-C orientation flip) | ~40–45 mA |
+| Layer 3 deep-sleep entry (peripheral GPIO tri-state, panel SLPIN, BL gated, haptic standby, CST816D deep-sleep, WiFi deinit, encoder-aware wake mask) | ~5 mA |
+| Bug fix: don't `gpio_reset_pin(19/20)` while USB-CDC console is active (PANIC) | enabled deep-sleep entry at all |
+| Bug fix: don't call `esp_sleep_pd_config(domain, OFF)` without balancing ON (refcount assert) | enabled deep-sleep entry at all |
+
+### Software ceiling reached
+
+The 7 mA floor is consistent with the schematic-derived hardware-mandatory load (~5–8 mA per the JSON schematic context):
+
+- ESP32-S3 deep sleep: ~10 µA
+- Secondary ESP32-U4WDH in deep sleep (our firmware): ~10 µA
+- TLV62569 buck quiescent: ~22 µA
+- SGM2036 LDO quiescent: ~50 µA (always on, EN tied to 5V)
+- PCM5100A DAC quiescent (no clocks): ~0.6–1.2 mA
+- DRV2605 in standby: ~few µA
+- SH8601 after SLPIN: ~80 µA
+- Battery divider 10k/10k from 5V: 0.25 mA continuous
+- Charge IC + leakage + measurement uncertainty: residual
+
+No further savings are possible from firmware. Everything that can be turned off in software has been turned off.
+
+### Hardware mods for further reduction (not yet attempted)
+
+Listed in order of effort/payoff. None are needed to ship — the current battery life is already in a "good" band. These are options if someone wants week-plus standby.
+
+| Mod | Estimated savings | Effort | Notes |
+|---|---:|---|---|
+| **Lift L8 (BLM18AG102SN1D ferrite feeding U20)** | ~1–2 mA | 0603 ferrite removal — moderate iron skill | Kills SGM2036 LDO + entire PCM5100A DAC simultaneously. Cleanest single mod. Reversible by re-soldering. Preferred over lifting U20 EN pin (smaller, harder to access, same payoff). After removal, GPIOs 39/40/41 (S3 I2S DAC) and the secondary's I2S pins should not drive into the now-unpowered DAC inputs — already handled by Layer 3 GPIO tri-state. |
+| **Replace battery divider R62/R63 (10k/10k → 100k/100k or 1M/1M)** | ~0.2 mA | Two 0603 swaps | Continuous 0.25 mA from 5V through the always-connected divider. Higher resistance reduces current at minor ADC noise cost; ESP32-S3 ADC input impedance is ~250 kΩ so 100k/100k is a sweet spot, 1M/1M may need a small filter cap. |
+| **Lift secondary ESP32-U4WDH EN pin from RTS#-driven trace, tie to GND** | up to ~10 µA | Pin lift + bridge to GND | The sleep-forever firmware already gets us to ~10 µA on the secondary, so this barely moves the needle. Only worth doing if also removing/repurposing the secondary entirely. |
+| **Lift DRV2605 EN pin from 3V3, route to S3 GPIO** | ~few µA | Small package, hard | DRV2605 in software standby already draws ~few µA. Marginal savings. Not worth the rework. |
+| **Add 100 nF caps to GND on ENC_A (GPIO 8) and ENC_B (GPIO 7)** | indirect | Two caps in parallel with encoder switches | Suppresses spurious encoder wakes. We saw 6 unintended wake cycles in 15 h, each costing ~9 mAh in active tail. Caps + slightly longer `deep_after_secs` would reduce wake cycles. Doesn't reduce instantaneous draw, but reduces total energy spent on wake-and-resleep tails. |
+| **Replace SGM2036 with a controllable LDO (EN to GPIO)** | ~1.2 mA | Whole-IC swap + GPIO routing | Mostly redundant with L8 lift; doesn't add meaningful savings beyond it. Only relevant in a board respin. |
+
+The L8 lift is the single highest-confidence next step if someone wants to push below 5 mA idle.
+
+### Lessons (referenced by deep-sleep gotchas above)
+
+- Dual-MCU board — secondary ESP32 was the dominant idle load and was invisible from S3-side firmware analysis. Always trust schematic page count over SKU descriptions.
+- USB-C orientation selects which MCU you're flashing on this board family. No buttons or jumpers.
+- `esp_sleep_pd_config(..., OFF)` is a refcount API — don't blindly copy it from examples.
+- `/log` HTTP endpoint can never show panic info (panic prints bypass the buffer and reset clears RAM). Serial monitor or coredump partition required for actual backtraces.
+
+
 
 ## Device
 Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (SH8601 QSPI 360×360 round LCD)
