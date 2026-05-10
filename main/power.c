@@ -136,9 +136,12 @@ static void enter_deep_sleep(void) {
         45, 46,
         // SD card slot (TF, unused by firmware but pads were touched at boot)
         2, 3, 4, 5, 6, 42,
-        // Native USB pins — the ESP32-S3's USJ peripheral keeps these
-        // weakly driven unless the pad is reset.
-        19, 20,
+        // NOTE: native USB pins (19, 20) are deliberately NOT in this list.
+        // Resetting them while USB-CDC is the active system console panics
+        // the chip — the console driver still owns those pads and any
+        // downstream log call faults once the pads go away. The USJ
+        // peripheral manages its own pad state across deep sleep; the
+        // sub-mA savings from resetting them aren't worth the crash.
     };
     for (size_t i = 0; i < sizeof(peripheral_gpios) / sizeof(peripheral_gpios[0]); i++) {
         gpio_reset_pin((gpio_num_t)peripheral_gpios[i]);

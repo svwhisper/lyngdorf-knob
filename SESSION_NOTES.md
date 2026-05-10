@@ -1,5 +1,5 @@
 # lyngdorf-knob session notes
-_Last updated: 2026-05-10 — secondary-ESP32 sleep-forever firmware flashed; awaiting overnight battery test on full charge_
+_Last updated: 2026-05-10 — USB-pin-reset panic fixed; deep sleep now stable past 7-min mark; overnight battery test in progress_
 
 ## Device
 Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (SH8601 QSPI 360×360 round LCD)
@@ -102,6 +102,7 @@ Encoder is now interrupt-driven (negedge on GPIO 7 + 8 with 5 ms per-pin debounc
    3. `haptic_standby()` puts DRV2605 into standby (~1.5 mA → few µA).
    4. `cst816_deep_sleep()` writes 0x03 to reg 0xA5 (~1.5 mA → ~5 µA). Side effect: TP_INT no longer wakes the chip — encoder is the sole wake path.
 7. **USB-CDC takes ~700 ms to renumerate after deep-sleep wake.** Without an early `vTaskDelay`, the post-wake `wake_cause=...` log line is dropped by the monitor. Currently 300 ms — bump to 1500 ms if you want guaranteed log visibility during development.
+8. **NEVER `gpio_reset_pin(19)` or `gpio_reset_pin(20)` while USB-CDC is the active system console.** Those are the native USB-DN/USB-DP pins. Resetting them yanks the pads out from under the active console driver and the chip panics on the next log call. Symptom we saw: deep-sleep entry log cuts off mid-line at "GPIO[19]| ... OpenD" exactly when USB CDC dies, then `boot_count` increments with `prev_reset=PANIC`. The USJ peripheral manages its own pad state across deep sleep; sub-mA savings aren't worth the crash. Layer-3 patch had these in the tri-state list — removed in commit after observing the panic loop (35 cycles in one battery session).
 
 ## Browser-based installer (ESP Web Tools)
 
@@ -121,7 +122,7 @@ After both, `https://svwhisper.github.io/lyngdorf-knob/` is the public install p
 - Album art (JPEG decode + LVGL image widget; URL is in `trackRoles.icon`)
 - Long-poll via `/api/pollQueue` for instant metadata updates
 - Source / sample-rate / bitrate display
-- Tune deep-sleep entry on amp source change (e.g. enter sleep 30 s after switching to non-streaming input)
+- ~~Tune deep-sleep entry on amp source change~~ — **explicitly NOT wanted.** Even on analogue sources the knob's volume control remains useful. Track-info will simply be blank for non-streaming inputs; that is acceptable. Deep-sleep gating should remain based on user idle time + amp not-playing, not on source type.
 
 ---
 
@@ -251,6 +252,7 @@ Files modified:
 |---|---|---|
 | Pre-fix baseline (commit `ff574cd`) | n/a | 100 % → 57 % over 6 h ≈ 57 mA avg |
 | Layer 1+2 flashed (diag + GPIO 0 hold), 30 min test | **2** (cold + 1 wake) — confirmed single deep-sleep entry, **no spurious wake loop** | 62 % → 53 % over 30 min (≈ 7 min awake + 23 min sleep). Roughly the same draw as before. **Conclusion: S3 deep sleep is real but the *board* draws ~50–60 mA continuously — almost certainly because the secondary ESP32-U4WDH is still awake (see "Prime suspect" section above).** |
+| Layer 3 + secondary-sleep firmware (2026-05-10) | 35 cycles in one battery session — every deep-sleep attempt panicked | Root cause: `gpio_reset_pin(19/20)` was crashing the USB-CDC console mid-entry. Fix: removed 19/20 from the tri-state list. After fix, device cleared the 7-min mark without rebooting — first time deep sleep has actually engaged with all power optimisations active **and** the secondary MCU sleeping. Overnight battery test in progress. |
 | Layer 3 (this final-pass) | not yet flashed | TBD |
 
 ### How to resume
