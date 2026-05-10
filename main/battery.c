@@ -19,15 +19,17 @@ static const char *TAG = "battery";
 #define BAT_ADC_BITWIDTH      ADC_BITWIDTH_12
 #define BAT_DIVIDER           2
 
-// Calibrated against this hardware's measured voltages — the rail we read
-// (BAT_ADC, top of the 10k/10k divider from "5V") sits ~0.3 V below the
-// raw cell voltage because of the charge path, so a freshly-charged cell
-// shows ~3.93 V at the ADC, not 4.2 V. Set FULL slightly below the
-// observed full-charge reading so any normal variance still shows 100%.
-// Empty matches the typical Li-Po cutoff (~3.0 V cell) shifted by the
-// same offset. Tweak both by ±50 mV per 10 % if behaviour drifts.
-#define BAT_FULL_MV           3920
-#define BAT_EMPTY_MV          3000
+// On battery (no USB), the divider reads cell voltage directly.
+// Below ~3.5 V a Li-ion's voltage falls off a cliff; above ~4.0 V it
+// flattens out. A linear curve drastically over-reports SoC at the low
+// end (e.g. 3.50 V is ~10% real, but a linear 3.0–4.2 V curve says 42%).
+// Brownout-on-WiFi at "58%" was the symptom of that.
+//
+// The table below is piecewise-linear over typical Li-ion discharge data
+// (light load, room temp). Tweak per-row if a specific cell behaves
+// differently.
+#define BAT_FULL_MV           4200
+#define BAT_EMPTY_MV          3300
 
 // Poll cadence — battery doesn't change fast
 #define BAT_POLL_MS           10000
@@ -64,9 +66,32 @@ static int read_voltage_mv(void) {
 
 static int8_t voltage_to_pct(int mv) {
     if (mv < 0) return -1;
-    if (mv >= BAT_FULL_MV)  return 100;
-    if (mv <= BAT_EMPTY_MV) return 0;
-    return (int8_t)(((mv - BAT_EMPTY_MV) * 100) / (BAT_FULL_MV - BAT_EMPTY_MV));
+    // Piecewise-linear Li-ion discharge curve (mV → %).
+    // Anchored at typical light-load voltages; below 3.50 V the cell is
+    // effectively spent — the chip will brownout under any WiFi TX burst.
+    static const struct { int mv; int8_t pct; } curve[] = {
+        { 4200, 100 },
+        { 4100,  90 },
+        { 4000,  80 },
+        { 3900,  65 },
+        { 3800,  50 },
+        { 3700,  35 },
+        { 3600,  20 },
+        { 3500,  10 },
+        { 3400,   5 },
+        { 3300,   0 },
+    };
+    const int n = sizeof(curve) / sizeof(curve[0]);
+    if (mv >= curve[0].mv)     return 100;
+    if (mv <= curve[n-1].mv)   return 0;
+    for (int i = 1; i < n; i++) {
+        if (mv >= curve[i].mv) {
+            int dv = curve[i-1].mv - curve[i].mv;
+            int dp = curve[i-1].pct - curve[i].pct;
+            return (int8_t)(curve[i].pct + ((mv - curve[i].mv) * dp) / dv);
+        }
+    }
+    return 0;
 }
 
 static void battery_tick(void *arg) {

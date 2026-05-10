@@ -17,6 +17,10 @@
 
 static const char *TAG = "power";
 
+// Defined in main.c; stamps esp_timer at the moment of deep-sleep entry so
+// the next boot's wake history records how long this boot stayed alive.
+extern void diag_record_pre_sleep(void);
+
 typedef enum { DISP_AWAKE, DISP_DIM, DISP_SLEEP } disp_state_t;
 
 static disp_state_t     s_state           = DISP_AWAKE;
@@ -104,9 +108,40 @@ static void enter_deep_sleep(void) {
 
     // ---- Network -------------------------------------------------------
     // Drop WiFi cleanly so the AP doesn't have to reap the association.
+    // esp_wifi_deinit() is stronger than just stop — it tears down the
+    // PHY / RF state machine. Without deinit, the radio's internal LDO
+    // can stay biased even with the chip "stopped".
     if (!wifi_manager_is_ap_mode()) {
         esp_wifi_disconnect();
         esp_wifi_stop();
+        esp_wifi_deinit();
+    }
+
+    // ---- Tri-state every peripheral GPIO we drove ------------------------
+    // Anything left as a driven output sources current through external
+    // pull-ups / pull-downs / chip biases until deep sleep latches the pad
+    // states. Resetting them returns the pad to "input, no pull, no drive"
+    // which is the lowest-leakage configuration for a deep-sleep moment.
+    // Wake pins (ENC_A/B) are handled separately below via rtc_gpio_init.
+    static const int peripheral_gpios[] = {
+        // LCD QSPI bus
+        LCD_CLK_GPIO, LCD_CS_GPIO, LCD_D0_GPIO, LCD_D1_GPIO, LCD_D2_GPIO, LCD_D3_GPIO,
+        LCD_RST_GPIO, LCD_BL_GPIO,
+        // Touch + haptic shared I2C + control
+        TOUCH_SDA_GPIO, TOUCH_SCL_GPIO, TOUCH_INT_GPIO, TOUCH_RST_GPIO,
+        // I2S DAC clocks (PCM5100A — DAC is hard-powered but at least don't
+        // source signals into it)
+        39, 40, 41,
+        // PDM microphone
+        45, 46,
+        // SD card slot (TF, unused by firmware but pads were touched at boot)
+        2, 3, 4, 5, 6, 42,
+        // Native USB pins — the ESP32-S3's USJ peripheral keeps these
+        // weakly driven unless the pad is reset.
+        19, 20,
+    };
+    for (size_t i = 0; i < sizeof(peripheral_gpios) / sizeof(peripheral_gpios[0]); i++) {
+        gpio_reset_pin((gpio_num_t)peripheral_gpios[i]);
     }
 
     // ---- Wake pins -----------------------------------------------------
@@ -148,11 +183,24 @@ static void enter_deep_sleep(void) {
     // wakes immediately on a stale TIMER wake.
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
+    // Force every optional power domain off that this SoC actually
+    // supports. RTC slow memory MUST stay ON so RTC_DATA_ATTR (wake
+    // counter / history) survives. RTC IO is implicitly required for
+    // ext1 wake. ESP32-S3 only allows RTC_PERIPH and CPU to be PD'd
+    // explicitly — the rest are managed by the chip.
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_CPU,        ESP_PD_OPTION_OFF);
+
     esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW);
     ESP_LOGI(TAG, "wake mask = 0x%llx", (unsigned long long)mask);
 
     // Brief breathing room so log gets flushed before the chip goes dark.
     vTaskDelay(pdMS_TO_TICKS(50));
+
+    // Stamp current uptime into RTC memory so the next boot's wake-history
+    // entry records how long this boot stayed alive — useful for spotting
+    // "boots up, runs briefly, sleeps again" cycles.
+    diag_record_pre_sleep();
 
     esp_deep_sleep_start();
     // unreachable

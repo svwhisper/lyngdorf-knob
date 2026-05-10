@@ -20,6 +20,8 @@ Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50
 
 The firmware is published as a pre-built binary you can flash directly from your browser. **Works on Windows, macOS, and Linux** — the ESP32-S3 has a native USB controller, so no drivers are required on any platform.
 
+> ⚠️ **For battery use, also see [this board has *two* MCUs](#important-this-board-has-two-mcus) below.** The hardware contains a secondary ESP32 that ships running an always-awake stock firmware drawing ~50 mA. If you only flash this project's firmware, idle battery life will be much shorter than it should be. The fix is a one-time flash of a tiny "deep-sleep forever" image to the secondary chip via the same USB-C port (cable flipped 180°).
+
 ### 1. Open the installer page
 
 > 👉 **<https://svwhisper.github.io/lyngdorf-knob/>**
@@ -114,6 +116,44 @@ esptool.py --chip esp32s3 -p /dev/cu.usbmodem* write_flash 0x0 lyngdorf-knob-mer
 ```
 
 After flashing, the same first-boot WiFi setup applies.
+
+---
+
+## Important: this board has *two* MCUs
+
+The Waveshare ESP32-S3-Knob-Touch-LCD-1.8 contains **two independent chips**: the ESP32-S3 (which runs this firmware) and a secondary ESP32 (the "ESP32-U4WDH") that ships running Waveshare's stock Bluetooth/WiFi audio firmware. The secondary chip is wired to the audio DAC and a second encoder, neither of which this project uses — but it stays awake whenever the board has power, drawing **~50 mA continuously**. On a small Li-Po cell that's the difference between days and weeks of idle battery life.
+
+There's no GPIO from the S3 to the secondary's enable pin, so the only way to silence it is to reflash it with a do-nothing image.
+
+### The USB-C cable orientation selects which chip you flash
+
+Waveshare routed the single USB-C port to *both* MCUs using the connector's two mirror-image pin sets:
+
+| Cable orientation | Connects to | Enumerates as |
+|---|---|---|
+| **A** (default — try this first) | ESP32-S3 | `/dev/cu.usbmodem*` (macOS / Linux) — native USB-CDC, no driver |
+| **B** (flip 180°) | Secondary ESP32 | `/dev/cu.usbserial-*` — via on-board USB-UART bridge |
+
+There are no buttons or jumpers. The cable is the only selector. If a flash attempt reports `This chip is ESP32, not ESP32-S3`, you're in orientation B — flip the cable.
+
+### Flashing the secondary into deep sleep
+
+The companion project [`lyngdorf-secondary-sleep`](https://github.com/svwhisper/lyngdorf-secondary-sleep) is a ~10-line ESP-IDF app whose only job is to call `esp_deep_sleep_start()` with no wake sources, putting the secondary into ~10 µA permanent sleep. **Flash this once after first install** to get the full battery-life benefit.
+
+```bash
+git clone https://github.com/svwhisper/lyngdorf-secondary-sleep.git
+cd lyngdorf-secondary-sleep
+idf.py set-target esp32 build
+
+# Flip the USB-C cable 180° now
+ls /dev/cu.usbserial-*    # confirm — should show one entry
+
+idf.py -p /dev/cu.usbserial-* flash
+
+# Flip the cable back to its original orientation for normal S3 use
+```
+
+This is reversible: re-flash Waveshare's stock binary at any time using the same flip-and-flash procedure if you want the audio path back. (Stock binary is not bundled here — pull from Waveshare's wiki if needed.)
 
 ---
 
