@@ -12,7 +12,7 @@ There are no unit tests; verification is on-device. Build with `idf.py build` af
 
 ## Architecture
 
-ESP-IDF 5.2 firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** turning it into a Lyngdorf TDAI-3400 controller.
+ESP-IDF 5.2 firmware for the **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** turning it into a controller for Lyngdorf amplifiers.
 
 ### Three FreeRTOS tasks
 

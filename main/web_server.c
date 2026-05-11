@@ -67,12 +67,15 @@ static const char *HTML_HEAD =
     "button:hover{background:#00a0a0}"
     ".note{margin-top:8px;font-size:.8em;color:#555}"
     "</style></head><body>"
-    "<h1>LyngdorfKnob</h1><p class='sub'>Lyngdorf TDAI-3400 controller</p>"
+    "<h1>LyngdorfKnob</h1><p class='sub'>Lyngdorf amplifier controller</p>"
     "<form method='POST' action='/save'>";
 
 static const char *HTML_FOOT =
     "<button type='submit'>Save &amp; Restart</button></form>"
     "<p class='note'>Tap = mute &nbsp;|&nbsp; Rotate = volume</p>"
+    "<p class='note'><a style='color:#00bfbf;text-decoration:none' "
+        "href='https://github.com/svwhisper/lyngdorf-knob' "
+        "target='_blank' rel='noopener'>Project on GitHub &rsaquo;</a></p>"
     "</body></html>";
 
 // ---------------------------------------------------------------------------
