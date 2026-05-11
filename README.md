@@ -143,6 +143,18 @@ The same log goes to USB-CDC when a cable is connected, so you don't lose anythi
 - **Idle** — display dims after `dim_secs` of inactivity, then panel-sleeps after `sleep_secs`. Any rotation or touch wakes instantly. After a further 5 minutes idle (and the amp not playing) the device drops into **deep sleep** — wake by **rotating the knob** (touch is disabled in deep sleep so the touch controller can fully power down).
 - **Haptic** — DRV2605 LRA buzz on every icon tap (encoder uses its mechanical detents; no electronic haptic on rotation)
 
+### Battery life
+
+With the secondary chip flashed to the "sleep forever" image, the primary's deep-sleep work, and the amp powered off (so the deep-sleep gate is satisfied), the device sits at roughly **7–17 mA** average draw — actual figure depends on how long it spends in the active / panel-sleep tiers between wakes. On the stock 800 mAh cell that works out to:
+
+| State | Avg current | Time on a full charge |
+|---|---|---|
+| Pure deep sleep, amp off, untouched | ~7 mA | ~4–5 days |
+| Mixed use (occasional volume tweaks, amp playing some of the day) | ~15–25 mA | ~1.5–2 days |
+| Continuous active (display on, WiFi up, no idling) | ~80 mA | ~10 hours |
+
+The remaining ~7 mA floor is the board's always-powered audio DAC, haptic LDO, and PDM mic — none of which have a software-accessible enable pin, so software can't push lower than that on a stock board.
+
 ### Boot splash
 
 On boot the project name appears at the top with a QR code linking to this repo (`https://github.com/svwhisper/lyngdorf-knob`) below it. Held for 6 seconds, then fades over 1 second to reveal the regular UI. Long enough to scan with a phone — the QR has a 6 px white quiet-zone border so cameras lock on quickly.
