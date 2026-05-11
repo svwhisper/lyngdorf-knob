@@ -15,12 +15,23 @@ static const char *TAG = "wifi";
 static bool s_connected = false;
 static bool s_ap_mode   = false;
 static int  s_retries   = 0;
+static char s_ip_str[24] = {0};   // populated on GOT_IP or in start_ap
 
 bool wifi_manager_is_connected(void) { return s_connected; }
 bool wifi_manager_is_ap_mode(void)   { return s_ap_mode;   }
 
+bool wifi_manager_get_ip_str(char *buf, size_t len) {
+    if (s_ip_str[0] == '\0' || !buf || len == 0) return false;
+    strncpy(buf, s_ip_str, len - 1);
+    buf[len - 1] = '\0';
+    return true;
+}
+
 static void start_ap(void) {
     s_ap_mode = true;
+    // AP mode always uses ESP-IDF's default 192.168.4.1 — record it so the
+    // splash QR can point straight at the config page.
+    strncpy(s_ip_str, "192.168.4.1", sizeof(s_ip_str) - 1);
     ESP_LOGI(TAG, "starting AP: %s", WIFI_AP_SSID);
 
     wifi_config_t ap_cfg = {
@@ -67,10 +78,9 @@ static void event_handler(void *arg, esp_event_base_t base,
         s_connected = true;
         s_retries   = 0;
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
-        char ip_str[24];
-        snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ev->ip_info.ip));
-        ESP_LOGI(TAG, "IP: %s", ip_str);
-        ui_set_wifi_info(NULL, ip_str);     // remember IP for status line
+        snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&ev->ip_info.ip));
+        ESP_LOGI(TAG, "IP: %s", s_ip_str);
+        ui_set_wifi_info(NULL, s_ip_str);   // remember IP for status line
         if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
             g_state.wifi_connected = true;
             g_state.dirty = true;

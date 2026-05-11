@@ -1,10 +1,12 @@
 #include "ui.h"
 #include "app_config.h"
+#include "wifi_manager.h"
 
 #include "lvgl.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -209,9 +211,26 @@ void ui_apply_pending_state(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Boot splash — black overlay panel with title / version / credit, fades
-// out after a short hold. Held for 2 s, fades over 1 s, then deletes itself.
+// Boot splash — black overlay panel with title / context-aware QR code,
+// fades out after a short hold. The QR target is decided by WiFi state:
+//   AP mode                → http://192.168.4.1/        (config form)
+//   STA + DHCP obtained    → http://<device-ip>/        (config form)
+//   neither (timeout)      → repo URL                   (docs fallback)
+//
+// We don't render the QR immediately; instead a poll timer waits up to 5 s
+// for WiFi state to resolve, then renders the QR and schedules the fade.
 // ---------------------------------------------------------------------------
+#define SPLASH_REPO_URL          "https://github.com/svwhisper/lyngdorf-knob"
+#define SPLASH_POLL_INTERVAL_MS  250
+#define SPLASH_POLL_MAX_COUNT    20      // 20 × 250 ms = 5 s timeout
+#define SPLASH_HOLD_AFTER_QR_MS  4000    // visible time once QR is up
+
+typedef struct {
+    lv_obj_t *panel;
+    lv_obj_t *placeholder;   // "Connecting..." text shown while WiFi is resolving
+    int       polls_left;
+} splash_ctx_t;
+
 static void splash_set_opa(void *obj, int32_t opa) {
     lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)opa, 0);
 }
@@ -232,6 +251,57 @@ static void splash_start_fade(lv_timer_t *t) {
     lv_anim_set_time(&a, 1000);
     lv_anim_set_ready_cb(&a, splash_done_cb);
     lv_anim_start(&a);
+}
+
+static void splash_render_qr(lv_obj_t *panel, const char *url) {
+    lv_obj_t *qr = lv_qrcode_create(panel, 200, lv_color_black(), lv_color_white());
+    lv_qrcode_update(qr, url, strlen(url));
+    // White quiet zone (border) around the modules — phones need it to lock on.
+    lv_obj_set_style_border_color(qr, lv_color_white(), 0);
+    lv_obj_set_style_border_width(qr, 6, 0);
+    lv_obj_align(qr, LV_ALIGN_CENTER, 0, 25);
+
+    // Small caption under the QR so the URL is visible to the human too.
+    lv_obj_t *cap = lv_label_create(panel);
+    lv_label_set_text(cap, url);
+    lv_obj_set_style_text_color(cap, COL_DIM, 0);
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_align(cap, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(cap, 280);
+    lv_label_set_long_mode(cap, LV_LABEL_LONG_DOT);
+    lv_obj_align(cap, LV_ALIGN_CENTER, 0, 145);
+
+    // Hold then fade out.
+    lv_timer_create(splash_start_fade, SPLASH_HOLD_AFTER_QR_MS, panel);
+}
+
+// LV timer: polls WiFi state every 250 ms. Once an IP / AP / timeout
+// outcome is known, renders the QR for the right URL and self-destructs.
+static void splash_poll_wifi(lv_timer_t *t) {
+    splash_ctx_t *ctx = (splash_ctx_t *)t->user_data;
+    char ip[24] = {0};
+    bool have_ip = wifi_manager_get_ip_str(ip, sizeof(ip));
+    bool timeout = (--ctx->polls_left <= 0);
+
+    if (!have_ip && !timeout) return;   // keep polling
+
+    // Remove the "Connecting..." placeholder before drawing the QR.
+    if (ctx->placeholder) lv_obj_del(ctx->placeholder);
+
+    char url[80];
+    if (have_ip) {
+        // Both STA-with-DHCP and AP-mode set s_ip_str in wifi_manager, so this
+        // single branch handles both — the user's phone scans straight to the
+        // device's config page either way.
+        snprintf(url, sizeof(url), "http://%s/", ip);
+    } else {
+        // No IP after timeout — neither STA nor AP up yet. Fall back to repo
+        // so the QR is at least useful for the docs.
+        snprintf(url, sizeof(url), SPLASH_REPO_URL);
+    }
+    splash_render_qr(ctx->panel, url);
+    lv_timer_del(t);
+    free(ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -349,17 +419,21 @@ esp_err_t ui_init(bool show_splash) {
     lv_obj_set_style_text_font(sp_title,  &lv_font_montserrat_20, 0);
     lv_obj_align(sp_title, LV_ALIGN_CENTER, 0, -110);
 
-    // QR code linking to the GitHub repo
-    static const char *REPO_URL = "https://github.com/svwhisper/lyngdorf-knob";
-    lv_obj_t *qr = lv_qrcode_create(splash, 200, lv_color_black(), lv_color_white());
-    lv_qrcode_update(qr, REPO_URL, strlen(REPO_URL));
-    // White quiet zone (border) around the modules — phones need it to lock on.
-    lv_obj_set_style_border_color(qr, lv_color_white(), 0);
-    lv_obj_set_style_border_width(qr, 6, 0);
-    lv_obj_align(qr, LV_ALIGN_CENTER, 0, 25);
+    // "Connecting..." placeholder where the QR will appear once we know the
+    // WiFi state. Keeps the splash from looking empty during the 1–4 s wait.
+    lv_obj_t *placeholder = lv_label_create(splash);
+    lv_label_set_text(placeholder, "Connecting...");
+    lv_obj_set_style_text_color(placeholder, COL_DIM, 0);
+    lv_obj_set_style_text_font(placeholder, &lv_font_montserrat_16, 0);
+    lv_obj_align(placeholder, LV_ALIGN_CENTER, 0, 25);
 
-    // Hold for 6 s (long enough to scan), then start a 1 s fade to transparent.
-    lv_timer_create(splash_start_fade, 6000, splash);
+    // Start polling WiFi state. As soon as we have an IP (STA-with-DHCP or
+    // AP mode) or 5 s elapse, the poll renders the QR and schedules the fade.
+    splash_ctx_t *ctx = malloc(sizeof(*ctx));
+    ctx->panel       = splash;
+    ctx->placeholder = placeholder;
+    ctx->polls_left  = SPLASH_POLL_MAX_COUNT;
+    lv_timer_create(splash_poll_wifi, SPLASH_POLL_INTERVAL_MS, ctx);
 
     ESP_LOGI(TAG, "UI ready");
     return ESP_OK;

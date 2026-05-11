@@ -32,10 +32,10 @@ Exit serial monitor: `Ctrl+]`.
 | Track metadata via amp HTTP API at port 8080 | ✅ |
 | Numeric volume + 3-line title/artist/album, all 16pt | ✅ |
 | Battery percentage (ADC1 ch0, 10 s poll, piecewise Li-ion curve) | ✅ |
-| Boot splash with QR code linking to repo (skipped on deep-sleep wake) | ✅ |
+| Boot splash with context-aware QR (config page if IP/AP, repo URL fallback; skipped on deep-sleep wake) | ✅ |
 | WiFi status during boot ("Connecting to <ssid>...", "as <ip>") | ✅ |
 | Haptic on icon tap | ✅ |
-| Web config form (WiFi / amp IP / vol step / dim / sleep / **deep_after_s** / **paused_grace_s** / meta poll) | ✅ |
+| Web config form (WiFi / amp IP / vol step / dim / sleep / **deep_after_s** / **paused_grace_s** / meta poll) + "Project on GitHub" link | ✅ |
 | **Tier 1 Active / Tier 2 Idle / Tier 3 Deep sleep** state machine | ✅ |
 | Light-sleep + tickless idle (CPU clock-gates between events) | ✅ |
 | ESP Web Tools installer (live at `https://svwhisper.github.io/lyngdorf-knob/`) | ✅ |
@@ -148,6 +148,20 @@ Inter-task: `g_cmd_queue` (encoder/touch → net), shared `g_state` guarded by `
 | `docs/index.html` | ESP Web Tools install page |
 | `docs/manifest.json` | Manifest pointing at GitHub Releases binary URL |
 | `.github/workflows/release.yml` | Auto-build + release on `git push --tags v*` |
+
+## Boot splash QR (context-aware, deferred render)
+
+The splash title appears immediately; the QR underneath is rendered once WiFi state is determined. A 250 ms-cadence LV timer polls `wifi_manager_get_ip_str()` for up to 5 s and picks the QR target:
+
+| State | QR target |
+|---|---|
+| AP mode (no WiFi configured yet) | `http://192.168.4.1/` |
+| STA + DHCP obtained | `http://<device-ip>/` |
+| Neither within 5 s | repo URL (docs fallback) |
+
+While the timer is still polling, a dim "Connecting..." placeholder occupies the QR area. The placeholder is deleted as the QR renders, and a small caption underneath shows the URL in human-readable text. Total cold-boot splash window: ~5–9 s (typically ~6 s, the same as the previous fixed-URL splash). Wake-from-deep-sleep continues to skip the splash entirely.
+
+`wifi_manager` exposes a single getter — `wifi_manager_get_ip_str()` — that pre-populates `192.168.4.1` on AP entry and the DHCP-issued IP on `GOT_IP`, so the splash logic has just one branch ("do we have any IP yet").
 
 ## Important hardware quirks (don't relearn these)
 
