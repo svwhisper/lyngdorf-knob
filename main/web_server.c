@@ -50,22 +50,34 @@ static bool get_field(const char *body, const char *name, char *out, size_t out_
 // ---------------------------------------------------------------------------
 // Config HTML page
 // ---------------------------------------------------------------------------
+// Form layout: each input is a fixed-width box on the LEFT, with its label
+// (plus optional helper <small>) to the RIGHT. Reads more like a settings
+// page on a phone — inputs line up in a clean column you scan vertically,
+// captions explain what each one does without crowding the input.
 static const char *HTML_HEAD =
     "<!DOCTYPE html><html><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>LyngdorfKnob</title>"
     "<style>"
-    "body{background:#111;color:#ddd;font-family:sans-serif;max-width:420px;margin:40px auto;padding:0 16px}"
+    "body{background:#111;color:#ddd;font-family:sans-serif;max-width:520px;margin:40px auto;padding:0 16px}"
     "h1{color:#00bfbf;font-size:1.4em;margin-bottom:4px}"
     "p.sub{color:#666;font-size:.85em;margin-top:0}"
-    "label{display:block;margin-top:16px;font-size:.9em;color:#aaa}"
-    "input{width:100%%;box-sizing:border-box;padding:9px 10px;background:#222;border:1px solid #333;"
-    "border-radius:4px;color:#eee;font-size:1em;margin-top:4px}"
-    "input:focus{outline:none;border-color:#00bfbf}"
-    "button{margin-top:24px;width:100%%;padding:12px;background:#00bfbf;border:none;"
-    "border-radius:4px;color:#111;font-size:1em;font-weight:bold;cursor:pointer}"
+    "form{margin-top:24px}"
+    ".row{display:flex;align-items:flex-start;gap:14px;margin-top:14px;cursor:pointer}"
+    ".row input{flex:0 0 150px;width:150px;box-sizing:border-box;padding:9px 10px;"
+        "background:#222;border:1px solid #333;border-radius:4px;color:#eee;font-size:1em}"
+    ".row input:focus{outline:none;border-color:#00bfbf}"
+    ".row .lbl{flex:1;padding-top:9px;font-size:.95em;color:#ccc;line-height:1.35}"
+    ".row .lbl small{display:block;margin-top:4px;font-size:.8em;color:#666;line-height:1.4}"
+    "button{margin-top:28px;width:100%%;padding:12px;background:#00bfbf;border:none;"
+        "border-radius:4px;color:#111;font-size:1em;font-weight:bold;cursor:pointer}"
     "button:hover{background:#00a0a0}"
     ".note{margin-top:8px;font-size:.8em;color:#555}"
+    "@media (max-width:420px){"
+        ".row{flex-direction:column;gap:4px}"
+        ".row input{flex:0 0 auto;width:100%%}"
+        ".row .lbl{padding-top:0}"
+    "}"
     "</style></head><body>"
     "<h1>LyngdorfKnob</h1><p class='sub'>Lyngdorf amplifier controller</p>"
     "<form method='POST' action='/save'>";
@@ -106,33 +118,45 @@ static esp_err_t get_handler(httpd_req_t *req) {
     // BSS-resident — handler is serialised by the httpd task, so reuse is safe.
     // Stack-resident copies overflowed the 4 KB httpd task stack once buf2 grew
     // to fit the deep-sleep config fields.
+    // Each field is rendered as <label class='row'><input ...><span class='lbl'>...</span></label>.
+    // Wrapping the row in a <label> means clicking the caption focuses the
+    // matching input, same as a normal stacked form.
     static char buf[1024];
     snprintf(buf, sizeof(buf),
-        "<label>WiFi SSID<input name='ssid' value='%s'></label>"
-        "<label>WiFi Password<input name='pass' type='password' value='%s'></label>"
-        "<label>Amp IP<input name='amp_ip' value='%s' placeholder='192.168.1.x'></label>"
-        "<label>Vol Step (0.1 dB units, e.g. 10=1.0dB/detent)"
-        "<input name='vol_step' type='number' min='1' max='50' value='%lu'></label>"
-        "<label>Track-info refresh (seconds, 1-60)"
-        "<input name='meta_poll_s' type='number' min='1' max='60' value='%lu'></label>",
+        "<label class='row'><input name='ssid' value='%s'>"
+            "<span class='lbl'>WiFi SSID</span></label>"
+        "<label class='row'><input name='pass' type='password' value='%s'>"
+            "<span class='lbl'>WiFi Password</span></label>"
+        "<label class='row'><input name='amp_ip' value='%s' placeholder='192.168.1.x'>"
+            "<span class='lbl'>Amp IP</span></label>"
+        "<label class='row'><input name='vol_step' type='number' min='1' max='50' value='%lu'>"
+            "<span class='lbl'>Vol Step"
+            "<small>0.1 dB units, e.g. 10 = 1.0 dB / detent</small></span></label>"
+        "<label class='row'><input name='meta_poll_s' type='number' min='1' max='60' value='%lu'>"
+            "<span class='lbl'>Track-info refresh"
+            "<small>Seconds between metadata polls, 1–60.</small></span></label>",
         ssid, pass, amp_ip, (unsigned long)vol_step, (unsigned long)meta_poll_s);
     httpd_resp_sendstr_chunk(req, buf);
 
     static char buf2[1280];
     snprintf(buf2, sizeof(buf2),
-        "<label>Dim display after (seconds, 0=off)"
-        "<input name='dim_secs' type='number' min='0' max='3600' value='%lu'></label>"
-        "<label>Sleep display after (seconds, 0=off)"
-        "<input name='sleep_secs' type='number' min='0' max='3600' value='%lu'></label>"
-        "<label>Deep sleep after (extra seconds idle, 0=disable deep sleep)"
-        "<input name='deep_after_s' type='number' min='0' max='3600' value='%lu'>"
-        "<small>Lower = more battery saved when unused; higher = no ~3 s WiFi reconnect "
-        "delay on next interaction. Breakeven vs. idle is ~25 s of extra sleep per wake.</small>"
-        "</label>"
-        "<label>Paused grace (seconds amp must be not playing before deep sleep, 0=ignore amp)"
-        "<input name='paused_grace_s' type='number' min='0' max='3600' value='%lu'>"
-        "<small>Keeps the knob responsive while music is playing.</small>"
-        "</label>",
+        "<label class='row'><input name='dim_secs' type='number' min='0' max='3600' value='%lu'>"
+            "<span class='lbl'>Dim display after"
+            "<small>Seconds idle before the backlight dims. 0 disables.</small></span></label>"
+        "<label class='row'><input name='sleep_secs' type='number' min='0' max='3600' value='%lu'>"
+            "<span class='lbl'>Sleep display after"
+            "<small>Seconds idle before the panel turns off. 0 disables.</small></span></label>"
+        "<label class='row'><input name='deep_after_s' type='number' min='0' max='3600' value='%lu'>"
+            "<span class='lbl'>Deep sleep after"
+            "<small>Extra seconds in panel-sleep before the chip enters deep sleep. "
+            "Lower = more battery saved; higher = no ~3 s WiFi reconnect delay on "
+            "next interaction. Breakeven vs. idle is ~25 s. 0 disables deep sleep.</small>"
+            "</span></label>"
+        "<label class='row'><input name='paused_grace_s' type='number' min='0' max='3600' value='%lu'>"
+            "<span class='lbl'>Paused grace"
+            "<small>Seconds the amp must be not playing before deep sleep is allowed. "
+            "Keeps the knob responsive while music is playing. 0 ignores the amp.</small>"
+            "</span></label>",
         (unsigned long)dim_secs, (unsigned long)sleep_secs,
         (unsigned long)deep_after_s, (unsigned long)paused_grace_s);
     httpd_resp_sendstr_chunk(req, buf2);
