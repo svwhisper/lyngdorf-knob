@@ -26,9 +26,13 @@ static const char *TAG = "battery";
 // Brownout-on-WiFi at "58%" was the symptom of that.
 //
 // The table below is piecewise-linear over typical Li-ion discharge data
-// (light load, room temp). Tweak per-row if a specific cell behaves
-// differently.
-#define BAT_FULL_MV           4200
+// (light load, room temp). It's anchored at 4062 mV = 100% — Waveshare's
+// on-board TP4056 charger appears to terminate around 4.07 V (a longevity
+// profile, lower than the textbook 4.20 V), and a freshly-charged cell on
+// this board settles there after a one-hour rest. The bottom of the curve
+// is unchanged: brownout-under-WiFi-burst sets in around 3.5 V regardless
+// of the top-of-curve voltage.
+#define BAT_FULL_MV           4062
 #define BAT_EMPTY_MV          3300
 
 // Poll cadence — battery doesn't change fast
@@ -67,14 +71,17 @@ static int read_voltage_mv(void) {
 static int8_t voltage_to_pct(int mv) {
     if (mv < 0) return -1;
     // Piecewise-linear Li-ion discharge curve (mV → %).
-    // Anchored at typical light-load voltages; below 3.50 V the cell is
-    // effectively spent — the chip will brownout under any WiFi TX burst.
+    // Anchored at 4062 mV = 100% based on a measured one-hour-rest open-
+    // circuit reading on this hardware. The top plateau is narrower than
+    // a 4.20 V cell — only ~60 mV between 100% and 90% — because the
+    // charger stops below the chemistry's textbook ceiling. Below 3.50 V
+    // the cell is effectively spent: the chip will brownout under any
+    // WiFi TX burst, so we keep the lower-end slope steep.
     static const struct { int mv; int8_t pct; } curve[] = {
-        { 4200, 100 },
-        { 4100,  90 },
-        { 4000,  80 },
-        { 3900,  65 },
-        { 3800,  50 },
+        { 4062, 100 },
+        { 4000,  90 },
+        { 3900,  75 },
+        { 3800,  55 },
         { 3700,  35 },
         { 3600,  20 },
         { 3500,  10 },
