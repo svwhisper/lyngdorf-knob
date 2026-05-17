@@ -1,6 +1,8 @@
 #include "ui.h"
 #include "app_config.h"
 #include "wifi_manager.h"
+#include "power.h"
+#include "haptic.h"
 
 #include "lvgl.h"
 #include "esp_log.h"
@@ -305,6 +307,34 @@ static void splash_poll_wifi(lv_timer_t *t) {
 }
 
 // ---------------------------------------------------------------------------
+// Screen-level gesture handler — swipe right = next track, swipe left = prev.
+//
+// LVGL detects swipes from the X/Y stream that touch_read_cb already
+// feeds it; the gesture is reported once at lift, on whichever widget
+// got the press. Registering on lv_scr_act() catches all swipes that
+// don't land on an interactive child (the icons and volume arc don't
+// claim gesture events, so anywhere on the screen works in practice).
+//
+// Pattern borrowed from joshuacant/BlueKnob — see docs/references/related-projects.md.
+// ---------------------------------------------------------------------------
+static void screen_gesture_cb(lv_event_t *e) {
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    lk_cmd_t cmd = { .param = 0 };
+
+    if (dir == LV_DIR_RIGHT) {
+        cmd.type = CMD_NEXT_TRACK;
+    } else if (dir == LV_DIR_LEFT) {
+        cmd.type = CMD_PREV_TRACK;
+    } else {
+        return;  // vertical swipe — ignore for now
+    }
+
+    power_signal_activity();
+    haptic_play();                       // tactile confirmation
+    xQueueSend(g_cmd_queue, &cmd, 0);
+}
+
+// ---------------------------------------------------------------------------
 // Build UI. show_splash=false on wake from deep sleep — we want the live
 // UI ready as fast as possible, no QR splash needed.
 // ---------------------------------------------------------------------------
@@ -312,6 +342,10 @@ esp_err_t ui_init(bool show_splash) {
     lv_obj_t *scr = lv_scr_act();
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+
+    // Screen-level swipe handler — feeds CMD_NEXT_TRACK / CMD_PREV_TRACK
+    // into the command queue. See screen_gesture_cb above.
+    lv_obj_add_event_cb(scr, screen_gesture_cb, LV_EVENT_GESTURE, NULL);
 
     // ---- Volume arc -------------------------------------------------------
     // 270° arc, gap at the bottom. In LVGL 8, set_bg_angles(135, 45) draws

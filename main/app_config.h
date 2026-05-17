@@ -104,6 +104,8 @@ typedef enum {
     CMD_VOL_CHANGE,     // param = delta in 0.1 dB units
     CMD_MUTE_TOGGLE,
     CMD_PLAY_PAUSE,
+    CMD_NEXT_TRACK,     // swipe-right on the screen
+    CMD_PREV_TRACK,     // swipe-left on the screen
 } lk_cmd_type_t;
 
 typedef struct {

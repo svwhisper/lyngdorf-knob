@@ -11,6 +11,8 @@ ESP-IDF firmware for the **[Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.w
 | Rotate encoder | Volume up / down (default **1.0 dB / detent**, configurable) |
 | Tap the speaker icon (left) | Mute / unmute |
 | Tap the play/pause icon (right) | Toggle play / pause |
+| Swipe right across the screen | Skip to next track |
+| Swipe left across the screen | Skip to previous track |
 
 Volume is sent to the amp via Lyngdorf's RIO TCP protocol on port 84 with sub-50 ms latency. The on-screen state mirrors changes made from the Lyngdorf remote, app, or front panel within a few seconds.
 
@@ -139,9 +141,10 @@ The same log goes to USB-CDC when a cable is connected, so you don't lose anythi
 - **Numeric volume** — top of display, always visible, updates live during rotation
 - **Track info** — artist / title / album, three centered lines (Montserrat 16pt white), pulled from the amp's HTTP/JSON API every 3 s
 - **Icons** — speaker (🔊 teal / 🔇 red) and play/pause (▶ / ⏸ teal), 32 pt, tap to toggle
+- **Swipe** — swipe right anywhere on the screen to skip to the next track, swipe left for previous. Works while awake or panel-sleeping; deep sleep still wakes by rotating the knob only.
 - **Battery** — small (12pt) percentage below the icons, gray when ≥21%, red when ≤20%
 - **Idle** — display dims after `dim_secs` of inactivity, then panel-sleeps after `sleep_secs`. Any rotation or touch wakes instantly. After a further 5 minutes idle (and the amp not playing) the device drops into **deep sleep** — wake by **rotating the knob** (touch is disabled in deep sleep so the touch controller can fully power down).
-- **Haptic** — DRV2605 LRA buzz on every icon tap (encoder uses its mechanical detents; no electronic haptic on rotation)
+- **Haptic** — DRV2605 LRA buzz on every icon tap and on every swipe (encoder uses its mechanical detents; no electronic haptic on rotation)
 
 ### Battery life
 

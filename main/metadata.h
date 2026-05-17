@@ -12,3 +12,10 @@ esp_err_t metadata_init(void);
 // (POST-style call uses GET in this API; "pause" value is a toggle, the
 // amp picks the right direction from its current state).
 esp_err_t metadata_play_pause(void);
+
+// Skip to next / previous track. Same endpoint as play/pause, different
+// JSON value. Per docs/references/lyngdorf-api.md the streaming module
+// accepts {"control":"next"} and {"control":"previous"} on the
+// player:player/control path with the "activate" role.
+esp_err_t metadata_next_track(void);
+esp_err_t metadata_prev_track(void);

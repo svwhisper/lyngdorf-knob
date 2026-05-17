@@ -165,33 +165,26 @@ static void metadata_task(void *arg) {
 }
 
 // ---------------------------------------------------------------------------
-// Play/pause toggle. Hits the amp's setData endpoint with the same URL the
-// amp's own web UI sends — a GET (despite the "setData" name) carrying a
-// JSON value of {"control":"pause"}. The amp toggles between play/pause
-// regardless of current state, so caller doesn't need to know it.
+// Send a control command on player:player/control. The amp's streaming
+// module accepts the same shape for play/pause, next, previous, stop —
+// only the JSON `control` value changes. URL-encoded form is built
+// inline so callers can pass plain ASCII verbs.
+//
+// `control_verb` must already be lowercase ASCII (e.g. "pause", "next",
+// "previous"). `label` is the short string used in log lines.
 // ---------------------------------------------------------------------------
-esp_err_t metadata_play_pause(void) {
+static esp_err_t send_player_control(const char *control_verb, const char *label) {
     if (s_amp_ip[0] == '\0') return ESP_ERR_INVALID_STATE;
 
-    // Optimistic state flip BEFORE the HTTP roundtrip — the request takes
-    // 100-500 ms and waiting for it would make the icon change feel laggy.
-    // The next metadata poll (within METADATA_POLL_S seconds) will correct
-    // the state if the request actually failed.
-    if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        g_state.playing = !g_state.playing;
-        g_state.dirty = true;
-        xSemaphoreGive(g_state_mutex);
-    }
-
-    char url[300];
-    // path=player:player/control  roles=activate
-    // value={"control":"pause"} (URL-encoded as %7B%22control%22%3A%22pause%22%7D)
+    // {"control":"<verb>"} URL-encoded. We hand-encode rather than depend on
+    // a URL-encoder because the surrounding characters are all known-safe.
+    char url[320];
     snprintf(url, sizeof(url),
              "http://%s:%d/api/setData"
              "?path=player%%3Aplayer%%2Fcontrol"
              "&roles=activate"
-             "&value=%%7B%%22control%%22%%3A%%22pause%%22%%7D",
-             s_amp_ip, METADATA_HTTP_PORT);
+             "&value=%%7B%%22control%%22%%3A%%22%s%%22%%7D",
+             s_amp_ip, METADATA_HTTP_PORT, control_verb);
 
     esp_http_client_config_t cfg = {
         .url               = url,
@@ -209,15 +202,44 @@ esp_err_t metadata_play_pause(void) {
     esp_http_client_cleanup(client);
 
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "play/pause request failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "%s request failed: %s", label, esp_err_to_name(err));
         return err;
     }
     if (status != 200) {
-        ESP_LOGW(TAG, "play/pause HTTP %d", status);
+        ESP_LOGW(TAG, "%s HTTP %d", label, status);
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "play/pause toggled");
+    ESP_LOGI(TAG, "%s sent", label);
     return ESP_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Play/pause toggle. The amp uses the literal "pause" verb as a toggle —
+// regardless of current playback state — so caller doesn't need to track it.
+//
+// We flip g_state.playing optimistically BEFORE the HTTP roundtrip. The
+// request takes 100-500 ms and waiting for it would make the icon change
+// feel laggy. The next metadata poll (within DEFAULT_META_POLL_S seconds)
+// corrects the state if the request actually failed.
+// ---------------------------------------------------------------------------
+esp_err_t metadata_play_pause(void) {
+    if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        g_state.playing = !g_state.playing;
+        g_state.dirty = true;
+        xSemaphoreGive(g_state_mutex);
+    }
+    return send_player_control("pause", "play/pause");
+}
+
+// Next / previous don't flip any optimistic state — the metadata poll
+// will pick up the new track within a couple of seconds and refresh the
+// displayed artist/title/album.
+esp_err_t metadata_next_track(void) {
+    return send_player_control("next", "next track");
+}
+
+esp_err_t metadata_prev_track(void) {
+    return send_player_control("previous", "prev track");
 }
 
 esp_err_t metadata_init(void) {

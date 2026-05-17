@@ -92,24 +92,34 @@ static void net_task(void *arg) {
         // comes first. Blocking on the queue means commands are processed with
         // ~zero added latency once they arrive.
         lk_cmd_t cmd;
-        int32_t  vol_delta_total  = 0;
-        bool     mute_toggle_req  = false;
-        bool     play_pause_req   = false;
+        int32_t  vol_delta_total = 0;
+        bool     mute_toggle_req = false;
+        bool     play_pause_req  = false;
+        bool     next_track_req  = false;
+        bool     prev_track_req  = false;
 
         if (xQueueReceive(g_cmd_queue, &cmd, pdMS_TO_TICKS(20)) == pdTRUE) {
             // First command arrived — drain anything else that's already queued
-            // (coalesces a fast multi-detent rotation into one !VOLCH).
+            // (coalesces a fast multi-detent rotation into one !VOLCH; also
+            // collapses any flurry of duplicate skip/mute toggles into one).
             do {
                 switch (cmd.type) {
                     case CMD_VOL_CHANGE:  vol_delta_total += cmd.param; break;
                     case CMD_MUTE_TOGGLE: mute_toggle_req = true;        break;
                     case CMD_PLAY_PAUSE:  play_pause_req  = true;        break;
+                    case CMD_NEXT_TRACK:  next_track_req  = true;        break;
+                    case CMD_PREV_TRACK:  prev_track_req  = true;        break;
                 }
             } while (xQueueReceive(g_cmd_queue, &cmd, 0) == pdTRUE);
 
             if (vol_delta_total != 0) lyngdorf_vol_delta(vol_delta_total);
             if (mute_toggle_req)      lyngdorf_mute_toggle();
             if (play_pause_req)       metadata_play_pause();
+            // If both next and prev got queued in the same drain (very fast
+            // back-and-forth swipe), prefer the most recent intent — but
+            // they shouldn't usually overlap. Send each if requested.
+            if (next_track_req)       metadata_next_track();
+            if (prev_track_req)       metadata_prev_track();
         }
 
         TickType_t now = xTaskGetTickCount();
